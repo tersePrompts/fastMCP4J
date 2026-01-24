@@ -7,7 +7,10 @@ import java.util.List;
 import com.ultrathink.fastmcp.exception.FastMcpException;
 import io.modelcontextprotocol.spec.McpSchema;
 
-// Lightweight response marshalling to text payloads expected by MCP client
+/**
+ * Converts method return values to MCP CallToolResult.
+ * Primitives/String → text content. Objects → JSON serialized. null → empty result.
+ */
 public class ResponseMarshaller {
     private final ObjectMapper mapper = new ObjectMapper()
             .setSerializationInclusion(JsonInclude.Include.NON_NULL);

@@ -8,6 +8,11 @@ import java.lang.reflect.Type;
 import java.util.Map;
 import com.fasterxml.jackson.databind.MapperFeature;
 
+/**
+ * Converts JSON request arguments to typed method parameters.
+ * Uses Jackson for type conversion. Validates required parameters (non-null for primitives).
+ * Resolves parameter names from @JsonProperty or -parameters compiler flag.
+ */
 public class ArgumentBinder {
     private final ObjectMapper mapper = new ObjectMapper();
 
