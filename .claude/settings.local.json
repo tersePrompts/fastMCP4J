@@ -9,7 +9,14 @@
       "Bash(git pull:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(mvn clean test:*)"
+      "Bash(mvn clean test:*)",
+      "Bash(mvn test:*)",
+      "Bash(mvn compile:*)",
+      "Bash(unzip:*)",
+      "Bash(jar -tf:*)",
+      "WebSearch",
+      "WebFetch(domain:www.baeldung.com)",
+      "Bash(mvn clean compile:*)"
     ]
   }
 }
