@@ -1,5 +1,6 @@
 package io.github.fastmcp.schema;
 
+import io.github.fastmcp.exception.FastMcpException;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.lang.reflect.*;
 import java.util.*;
@@ -44,7 +45,7 @@ public class SchemaGenerator {
         } else if (type instanceof ParameterizedType pt) {
             result = generateGenericSchema(pt);
         } else {
-            throw new FastMcpExceptionInstance("Unsupported type: " + type);
+            throw new FastMcpException("Unsupported type: " + type);
         }
 
         cache.put(type, result);
@@ -59,7 +60,7 @@ public class SchemaGenerator {
         if (clazz == boolean.class || clazz == Boolean.class) return Map.of("type", "boolean");
         if (clazz.isEnum()) return enumSchema(clazz);
         if (!clazz.isPrimitive()) return pojoSchema(clazz);
-        throw new FastMcpExceptionInstance("Unsupported class type: " + clazz);
+        throw new FastMcpException("Unsupported class type: " + clazz);
     }
 
     private Map<String, Object> pojoSchema(Class<?> clazz) {
@@ -97,7 +98,7 @@ public class SchemaGenerator {
             return Map.of("type", "object", "additionalProperties", valueSchema);
         }
         // Fallback for other generics
-        throw new FastMcpExceptionInstance("Unsupported generic type: " + pt);
+        throw new FastMcpException("Unsupported generic type: " + pt);
     }
 
     private Map<String, Object> enumSchema(Class<?> clazz) {
@@ -110,7 +111,7 @@ public class SchemaGenerator {
         JsonProperty ann = p.getAnnotation(JsonProperty.class);
         if (ann != null && !ann.value().isEmpty()) return ann.value();
         if (p.isNamePresent()) return p.getName();
-        throw new FastMcpExceptionInstance("Cannot determine parameter name. Use @JsonProperty or compile with -parameters");
+        throw new FastMcpException("Cannot determine parameter name. Use @JsonProperty or compile with -parameters");
     }
 
     private boolean isOptional(Parameter p) {
@@ -121,9 +122,4 @@ public class SchemaGenerator {
         }
         return false;
     }
-}
-
-// Lightweight wrapper to mirror used exception in this module without importing a central one here
-class FastMcpExceptionInstance extends RuntimeException {
-    FastMcpExceptionInstance(String msg) { super(msg); }
 }
