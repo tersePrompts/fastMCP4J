@@ -685,6 +685,182 @@ public enum TransportType {
 
 ---
 
+### CHUNK 7: MCP SDK Integration - stdio Transport (Depends: ALL previous chunks)
+**Priority**: Critical - This makes the server actually work with MCP clients
+
+**Status**: Partially done - `FastMCP.java` has skeleton but needs real MCP SDK integration
+
+**Files to modify**:
+- `core/FastMCP.java` - Replace dummy RealMcpAsyncServer with proper MCP SDK integration
+- `core/McpAsyncServer.java` - May need to extend/wrap official SDK's McpAsyncServer
+
+**Implementation tasks**:
+1. **Import official MCP SDK types**: `io.modelcontextprotocol.sdk.*`
+2. **Create real transport provider**: Use `StdioServerTransportProvider` from MCP SDK
+3. **Register tools with official SDK**: Use `McpServer.async().serverInfo().tool()` builder pattern
+4. **Wire up handlers**: Pass `ToolHandler.asHandler()` BiFunction to official SDK
+5. **Implement graceful shutdown**: Proper `close()` and `awaitTermination()` handling
+
+**Code structure**:
+```java
+import io.modelcontextprotocol.sdk.*;
+import io.modelcontextprotocol.sdk.server.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+private McpAsyncServer build() {
+    instantiateServer();
+    
+    // Scan annotations
+    ServerMeta metadata = new AnnotationScanner().scan(serverClass);
+    
+    // Create transport
+    ObjectMapper mapper = new ObjectMapper();
+    McpServerTransportProvider transportProvider = switch (transport) {
+        case STDIO -> new StdioServerTransportProvider(mapper);
+        case HTTP_SSE -> new HttpServletSseServerTransportProvider(mapper);
+        case HTTP_STREAMABLE -> new HttpServletStreamableServerTransportProvider(mapper);
+    };
+    
+    // Build official SDK server
+    McpServer.AsyncSpecification spec = McpServer.async(transportProvider)
+        .serverInfo(metadata.name(), metadata.version());
+    
+    // Register tools
+    for (ToolMeta toolMeta : metadata.getTools()) {
+        Map<String, Object> schema = new SchemaGenerator().generate(toolMeta.getMethod());
+        JsonSchema inputSchema = new JsonSchemaImpl(schema);
+        
+        Tool tool = Tool.builder()
+            .name(toolMeta.getName())
+            .description(toolMeta.getDescription())
+            .inputSchema(inputSchema)
+            .build();
+        
+        ToolHandler handler = new ToolHandler();
+        handler.instance = serverInstance;
+        handler.meta = toolMeta;
+        handler.binder = new ArgumentBinder();
+        handler.marshaller = new ResponseMarshaller();
+        
+        spec.tool(tool, handler.asHandler());
+    }
+    
+    // Register resources (TODO: after ResourceHandler is implemented)
+    // Register prompts (TODO: after PromptHandler is implemented)
+    
+    return spec.build();
+}
+```
+
+**Tests**:
+- testStdioServerStarts
+- testToolInvokedViaStdio
+- testGracefulShutdown
+
+---
+
+### CHUNK 8: SSE and HTTP_STREAMABLE Transports (Depends: CHUNK 7)
+**Priority**: High - Enables web-based MCP clients
+
+**Files to modify**:
+- `core/FastMCP.java` - Ensure HTTP_SSE and HTTP_STREAMABLE cases work
+- No new files needed - just ensure proper MCP SDK integration
+
+**Implementation tasks**:
+1. **Verify HttpServletSseServerTransportProvider** works with FastMCP
+2. **Verify HttpServletStreamableServerTransportProvider** works with FastMCP
+3. **Add configuration support** for host/port (optional, may rely on SDK defaults)
+4. **Test transport switching**: Verify `.sse()`, `.streamable()`, `.stdio()` all work
+
+**Code structure**:
+- Mostly verification that CHUNK 7's transport switch statement works correctly
+- May need to add port/host configuration methods:
+  ```java
+  public FastMCP port(int port) {
+      this.port = port;
+      return this;
+  }
+  ```
+
+**Tests**:
+- testSseTransportBuilder
+- testStreamableTransportBuilder
+- testMultipleTransports
+
+---
+
+### CHUNK 9: ResourceHandler and PromptHandler (Depends: CHUNK 7)
+**Priority**: Medium - Complete the adapter layer
+
+**Files to create**:
+- `adapter/ResourceHandler.java`
+- `adapter/PromptHandler.java`
+
+**ResourceHandler spec**:
+```java
+public class ResourceHandler {
+    Object instance;
+    ResourceMeta meta;
+    ArgumentBinder binder;
+    ResponseMarshaller marshaller;
+    
+    public BiFunction<McpAsyncServerExchange, ReadResourceRequest, Mono<ReadResourceResult>> asHandler() {
+        return (exchange, request) -> {
+            try {
+                Object[] args = binder.bindResource(meta.getMethod(), request.uri());
+                Object result = meta.getMethod().invoke(instance, args);
+                
+                if (meta.isAsync()) {
+                    return ((Mono<?>) result).map(marshaller::marshalResource);
+                } else {
+                    return Mono.just(marshaller.marshalResource(result));
+                }
+            } catch (Exception e) {
+                return Mono.just(errorResult(e));
+            }
+        };
+    }
+}
+```
+
+**PromptHandler spec**:
+```java
+public class PromptHandler {
+    Object instance;
+    PromptMeta meta;
+    ArgumentBinder binder;
+    
+    public BiFunction<McpAsyncServerExchange, GetPromptRequest, Mono<GetPromptResult>> asHandler() {
+        return (exchange, request) -> {
+            try {
+                Object[] args = binder.bindPrompt(meta.getMethod(), request.arguments());
+                Object result = meta.getMethod().invoke(instance, args);
+                
+                if (meta.isAsync()) {
+                    return ((Mono<?>) result).map(this::toPromptResult);
+                } else {
+                    return Mono.just(toPromptResult(result));
+                }
+            } catch (Exception e) {
+                return Mono.just(errorResult(e));
+            }
+        };
+    }
+}
+```
+
+**Integration with FastMCP**:
+- Add resource registration loop after tool registration in `FastMCP.build()`
+- Add prompt registration loop after resource registration
+
+**Tests**:
+- testResourceHandlerSyncInvocation
+- testResourceHandlerAsyncInvocation
+- testPromptHandlerSyncInvocation
+- testPromptHandlerAsyncInvocation
+
+---
+
 ## Dependency Graph
 
 ```
@@ -700,6 +876,18 @@ CHUNK 2: Model ──────> CHUNK 3: Scanner
   └──────────────────────┼────> CHUNK 5: Adapters
                          │        │
                          └────────┴────> CHUNK 6: FastMCP
+                         │        │
+                         │        │
+                         │        │
+                         └────────┴────> CHUNK 7: MCP SDK Integration
+                         │        │
+                         │        │
+                         │        │
+                         └────────┴────> CHUNK 8: SSE and HTTP_STREAMABLE
+                         │        │
+                         │        │
+                         │        │
+                         └────────┴────> CHUNK 9: ResourceHandler and PromptHandler
 ```
 
 **Parallelization**:
@@ -707,6 +895,9 @@ CHUNK 2: Model ──────> CHUNK 3: Scanner
 - After CHUNK 1: CHUNK 2 (parallel)
 - After CHUNK 2: CHUNK 3, CHUNK 4, CHUNK 5 (all parallel)
 - After ALL: CHUNK 6 (sequential)
+- After CHUNK 6: CHUNK 7 (sequential)
+- After CHUNK 7: CHUNK 8 (sequential)
+- After CHUNK 8: CHUNK 9 (sequential)
 
 ---
 
@@ -1444,7 +1635,7 @@ public class WeatherServer {
 - User can create a working MCP server in < 20 lines of code
 - Reduces boilerplate by 80% vs official SDK
 - Zero configuration for common cases
-- Clear error messages for misconfigurations
+- Clear error messages on misconfiguration
 
 **Adoption Indicators**:
 - 3+ GitHub stars in first week
@@ -1486,3 +1677,12943 @@ public class WeatherServer {
 5. Phase 5 (FastMCP Builder) - API surface
 6. Phase 6 (Testing & Examples) - Validation
 
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE files
+
+---
+
+## Verification Plan
+
+### End-to-End Test Scenario
+
+**Goal**: Verify that a user can create a functioning MCP server with minimal code.
+
+**Steps:**
+1. Create a simple server class with annotations
+2. Compile with `mvn compile`
+3. Run the server
+4. Connect an MCP client (Claude Desktop or test client)
+5. Invoke a tool and verify response
+6. Access a resource and verify content
+7. Shutdown gracefully
+
+**Success Criteria:**
+```java
+// 1. User writes this code (10 lines):
+@McpServer(name = "Weather", version = "1.0.0")
+public class WeatherServer {
+    @McpTool(description = "Get current temperature")
+    public double getTemp(String city) {
+        return 72.5; // Mock
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(WeatherServer.class).run();
+    }
+}
+
+// 2. Compile: mvn clean package
+
+// 3. Run: java -jar target/weather-server.jar
+
+// 4. Client invokes:
+//    Tool: getTemp
+//    Args: {"city": "San Francisco"}
+//
+//    Expected response:
+//    {
+//      "content": [{"type": "text", "text": "72.5"}],
+//      "isError": false
+//    }
+```
+
+**Verification Checklist:**
+- [ ] Annotation scanning works
+- [ ] Schema generated correctly from `String city` parameter
+- [ ] Tool registered with official SDK
+- [ ] Handler invokes method with correct argument
+- [ ] Response marshalled to text content
+- [ ] No exceptions or errors in logs
+- [ ] Server shuts down cleanly on Ctrl+C
+
+---
+
+## Dependencies
+
+```xml
+<dependencies>
+    <!-- MCP Official SDK -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.16.0</version>
+    </dependency>
+
+    <!-- Jackson for schema generation and JSON handling -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-jsonSchema</artifactId>
+        <version>2.18.2</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.11.4</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## Trade-offs & Decisions
+
+### 1. Reflection vs Code Generation
+**Decision**: Use reflection
+**Rationale**: Simpler implementation for MVP, no build-time complexity. Code gen can be added later for performance.
+
+### 2. Java 17+ Requirement
+**Decision**: Target Java 17
+**Rationale**: Records, pattern matching, modern APIs. Enterprise Java is moving to 17+.
+
+### 3. Jackson for Schema Generation
+**Decision**: Use Jackson ObjectMapper + jackson-module-jsonSchema
+**Rationale**: Already a transitive dependency of MCP SDK, widely understood, handles complex types.
+
+### 4. Parameter Name Discovery
+**Decision**: Require `-parameters` compiler flag OR `@JsonProperty` annotations
+**Rationale**: Java erases parameter names by default. This is the least invasive solution.
+
+### 5. Sync vs Async as Default
+**Decision**: Support both, async as internal implementation
+**Rationale**: Official SDK is async-first (Reactor). We wrap with sync facade for simplicity but expose async for advanced users.
+
+### 6. Exception Handling Strategy
+**Decision**: Convert all exceptions to error CallToolResults
+**Rationale**: Prevents server crashes, provides user-friendly errors to clients.
+
+---
+
+## Future Enhancements (v0.2+)
+
+1. **GitHub OAuth Provider**
+   - Pre-built `@EnableGitHubAuth` annotation
+   - Auto token validation
+
+2. **OpenAPI → MCP Generation**
+   - CLI: `fastmcp generate --openapi api.yaml --output GeneratedServer.java`
+   - Generates annotated server class from OpenAPI spec
+
+3. **CLI Tooling**
+   - `fastmcp dev MyServer.java` - Hot reload development server
+   - `fastmcp inspect MyServer.class` - Interactive tool tester
+
+4. **Spring Boot Starter**
+   - `spring-boot-starter-fastmcp`
+   - Auto-detect @McpServer beans
+   - Expose via `/mcp` endpoint
+
+5. **Server Composition**
+   - `FastMCP.compose(server1, server2).mount("/v1", server1)`
+
+6. **Advanced Schema Features**
+   - JSR-303 validation annotations (`@NotNull`, `@Min`, `@Max`)
+   - Custom schema annotations (`@Schema(example="...", deprecated=true)`)
+
+---
+
+## Success Metrics
+
+**MVP (v0.1) Success**:
+- User can create a working MCP server in < 20 lines of code
+- Reduces boilerplate by 80% vs official SDK
+- Zero configuration for common cases
+- Clear error messages on misconfiguration
+
+**Adoption Indicators**:
+- 3+ GitHub stars in first week
+- 1+ external contributor within 1 month
+- 5+ production deployments within 3 months
+
+---
+
+## Open Questions
+
+1. **Parameter Naming**: Should we enforce `@JsonProperty` or make `-parameters` mandatory?
+   - **Recommendation**: Support both, fail with clear error message if neither present
+
+2. **Resource Templates**: How to handle URI template parameters in @McpResource?
+   - **Recommendation**: Support method parameters as template vars: `@McpResource(uri="file://{path}")` binds `String path` param
+
+3. **Error Responses**: Should we auto-format exception stack traces or just message?
+   - **Recommendation**: Message only by default, add `FastMCP.verboseErrors(true)` for stack traces
+
+4. **Logging**: What level of logging by default?
+   - **Recommendation**: INFO for server lifecycle, DEBUG for tool invocations
+
+---
+
+## Implementation Timeline Estimate
+
+*(Note: No time estimates per guidelines, but sequencing is important)*
+
+**Sequential Dependencies**:
+1. Annotations → Scanner → Schema Generator → Handler Adapter → FastMCP Builder
+2. Cannot parallelize core components due to dependencies
+3. Examples/tests can be developed in parallel with Phase 5-6
+
+**Recommended Implementation Order**:
+1. Phase 1 (Annotations) - Foundation
+2. Phase 2 (Scanner) - Metadata extraction
+3. Phase 3 (Schema Generator) - Most complex logic
+4. Phase 4 (Handler Adapter) - Integration glue
+5. Phase 5 (FastMCP Builder) - API surface
+6. Phase 6 (Testing & Examples) - Validation
+
+---
+
+## Critical Files to Modify/Create
+
+### New Files (All in `src/main/java`)
+1. `io/github/fastmcp/annotations/McpServer.java`
+2. `io/github/fastmcp/annotations/McpTool.java`
+3. `io/github/fastmcp/annotations/McpResource.java`
+4. `io/github/fastmcp/annotations/McpPrompt.java`
+5. `io/github/fastmcp/annotations/McpAsync.java`
+6. `io/github/fastmcp/core/FastMCP.java`
+7. `io/github/fastmcp/core/ServerMetadata.java`
+8. `io/github/fastmcp/core/TransportType.java`
+9. `io/github/fastmcp/scanner/AnnotationScanner.java`
+10. `io/github/fastmcp/scanner/ToolDefinition.java`
+11. `io/github/fastmcp/scanner/ResourceDefinition.java`
+12. `io/github/fastmcp/scanner/PromptDefinition.java`
+13. `io/github/fastmcp/schema/SchemaGenerator.java`
+14. `io/github/fastmcp/schema/TypeInspector.java`
+15. `io/github/fastmcp/schema/SchemaCache.java`
+16. `io/github/fastmcp/adapter/ToolHandlerAdapter.java`
+17. `io/github/fastmcp/adapter/ResourceHandlerAdapter.java`
+18. `io/github/fastmcp/adapter/PromptHandlerAdapter.java`
+19. `io/github/fastmcp/adapter/ArgumentBinder.java`
+20. `io/github/fastmcp/adapter/ResponseMarshaller.java`
+21. `io/github/fastmcp/exception/FastMcpException.java`
+22. `io/github/fastmcp/exception/ValidationException.java`
+23. `io/github/fastmcp/exception/SchemaGenerationException.java`
+24. `io/github/fastmcp/exception/HandlerExecutionException.java`
+
+### Configuration Files
+1. `pom.xml` - Maven dependencies (official SDK, Jackson, SLF4J)
+2. `README.md` - Getting started guide
+3. `.gitignore` - Maven/IDE
