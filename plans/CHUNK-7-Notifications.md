@@ -71,11 +71,16 @@ enum ResourceType {
 ```
 
 ### NotificationSender.java
+
 ```java
 package io.github.fastmcp.notification;
 
-import io.github.fastmcp.exception.FastMcpException;
+import exception.com.ultrathink.fastmcp.FastMcpException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ultrathink.fastmcp.notification.LoggingNotification;
+import com.ultrathink.fastmcp.notification.ProgressNotification;
+import com.ultrathink.fastmcp.notification.ResourceChangedNotification;
+
 import java.util.function.Consumer;
 
 public class NotificationSender {
@@ -128,10 +133,14 @@ public NotificationSender getNotificationSender() {
 ```
 
 ## Tests
+
 ```java
 package io.github.fastmcp.notification;
 
+import com.ultrathink.fastmcp.notification.LoggingNotification;
+import com.ultrathink.fastmcp.notification.ProgressNotification;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class NotificationTest {

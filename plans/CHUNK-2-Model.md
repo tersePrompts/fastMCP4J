@@ -16,10 +16,15 @@
 **Style**: Use Lombok `@Value` for immutable data classes
 
 ### ServerMeta.java
+
 ```java
 package io.github.fastmcp.model;
 
+import com.ultrathink.fastmcp.model.PromptMeta;
+import com.ultrathink.fastmcp.model.ResourceMeta;
+import com.ultrathink.fastmcp.model.ToolMeta;
 import lombok.Value;
+
 import java.util.List;
 
 @Value
@@ -88,12 +93,17 @@ public class PromptMeta {
 ## Tests
 
 ### ModelTest.java
+
 ```java
 package io.github.fastmcp.model;
 
+import com.ultrathink.fastmcp.model.ServerMeta;
+import com.ultrathink.fastmcp.model.ToolMeta;
 import org.junit.jupiter.api.Test;
+
 import java.lang.reflect.Method;
 import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class ModelTest {
@@ -101,12 +111,12 @@ class ModelTest {
     @Test
     void testServerMetaCreation() {
         ServerMeta meta = new ServerMeta(
-            "test",
-            "1.0.0",
-            "instructions",
-            List.of(),
-            List.of(),
-            List.of()
+                "test",
+                "1.0.0",
+                "instructions",
+                List.of(),
+                List.of(),
+                List.of()
         );
 
         assertEquals("test", meta.getName());

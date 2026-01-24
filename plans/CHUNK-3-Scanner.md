@@ -12,10 +12,11 @@
 ## Implementation
 
 ### ValidationException.java
+
 ```java
 package io.github.fastmcp.scanner;
 
-import io.github.fastmcp.exception.FastMcpException;
+import exception.com.ultrathink.fastmcp.FastMcpException;
 
 public class ValidationException extends FastMcpException {
     public ValidationException(String message) {
@@ -25,11 +26,17 @@ public class ValidationException extends FastMcpException {
 ```
 
 ### AnnotationScanner.java
+
 ```java
 package io.github.fastmcp.scanner;
 
-import io.github.fastmcp.annotations.*;
-import io.github.fastmcp.model.*;
+import com.ultrathink.fastmcp.annotations.*;
+import com.ultrathink.fastmcp.model.PromptMeta;
+import com.ultrathink.fastmcp.model.ResourceMeta;
+import com.ultrathink.fastmcp.model.ServerMeta;
+import com.ultrathink.fastmcp.model.ToolMeta;
+import com.ultrathink.fastmcp.scanner.ValidationException;
+
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
@@ -42,34 +49,34 @@ public class AnnotationScanner {
         McpServer ann = clazz.getAnnotation(McpServer.class);
 
         return new ServerMeta(
-            ann.name(),
-            ann.version(),
-            ann.instructions(),
-            scanTools(clazz),
-            scanResources(clazz),
-            scanPrompts(clazz)
+                ann.name(),
+                ann.version(),
+                ann.instructions(),
+                scanTools(clazz),
+                scanResources(clazz),
+                scanPrompts(clazz)
         );
     }
 
     private List<ToolMeta> scanTools(Class<?> clazz) {
         return Arrays.stream(clazz.getDeclaredMethods())
-            .filter(m -> m.isAnnotationPresent(McpTool.class))
-            .map(this::toToolMeta)
-            .toList();
+                .filter(m -> m.isAnnotationPresent(McpTool.class))
+                .map(this::toToolMeta)
+                .toList();
     }
 
     private List<ResourceMeta> scanResources(Class<?> clazz) {
         return Arrays.stream(clazz.getDeclaredMethods())
-            .filter(m -> m.isAnnotationPresent(McpResource.class))
-            .map(this::toResourceMeta)
-            .toList();
+                .filter(m -> m.isAnnotationPresent(McpResource.class))
+                .map(this::toResourceMeta)
+                .toList();
     }
 
     private List<PromptMeta> scanPrompts(Class<?> clazz) {
         return Arrays.stream(clazz.getDeclaredMethods())
-            .filter(m -> m.isAnnotationPresent(McpPrompt.class))
-            .map(this::toPromptMeta)
-            .toList();
+                .filter(m -> m.isAnnotationPresent(McpPrompt.class))
+                .map(this::toPromptMeta)
+                .toList();
     }
 
     private ToolMeta toToolMeta(Method method) {
@@ -119,12 +126,17 @@ public class AnnotationScanner {
 ## Tests
 
 ### AnnotationScannerTest.java
+
 ```java
 package io.github.fastmcp.scanner;
 
-import io.github.fastmcp.annotations.*;
-import io.github.fastmcp.model.*;
+import com.ultrathink.fastmcp.annotations.McpServer;
+import com.ultrathink.fastmcp.annotations.McpTool;
+import com.ultrathink.fastmcp.model.ServerMeta;
+import com.ultrathink.fastmcp.scanner.AnnotationScanner;
+import com.ultrathink.fastmcp.scanner.ValidationException;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class AnnotationScannerTest {
@@ -150,7 +162,8 @@ class AnnotationScannerTest {
 
     @Test
     void testScanMissingAnnotation_ThrowsException() {
-        class InvalidServer {}
+        class InvalidServer {
+        }
 
         assertThrows(ValidationException.class, () -> scanner.scan(InvalidServer.class));
     }
@@ -160,7 +173,8 @@ class AnnotationScannerTest {
         @McpServer(name = "Test")
         class TestServer {
             @McpTool(description = "Test")
-            public void myMethod() {}
+            public void myMethod() {
+            }
         }
 
         ServerMeta meta = scanner.scan(TestServer.class);

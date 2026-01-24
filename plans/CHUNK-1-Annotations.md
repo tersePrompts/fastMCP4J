@@ -105,12 +105,16 @@ public @interface McpAsync {
 ## Tests
 
 ### AnnotationsTest.java
+
 ```java
 package io.github.fastmcp.annotations;
 
+import com.ultrathink.fastmcp.annotations.*;
 import org.junit.jupiter.api.Test;
+
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
+
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 import static java.lang.annotation.ElementType.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -129,7 +133,8 @@ class AnnotationsTest {
     @Test
     void testAnnotationDefaultValues() {
         @McpServer(name = "test")
-        class TestServer {}
+        class TestServer {
+        }
 
         McpServer ann = TestServer.class.getAnnotation(McpServer.class);
         assertEquals("1.0.0", ann.version());

@@ -37,11 +37,13 @@ public class SchemaCache {
 ```
 
 ### SchemaGenerator.java
+
 ```java
 package io.github.fastmcp.schema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.github.fastmcp.exception.FastMcpException;
+import exception.com.ultrathink.fastmcp.FastMcpException;
+import com.ultrathink.fastmcp.schema.SchemaCache;
 import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.Method;
@@ -118,8 +120,8 @@ public class SchemaGenerator {
     private Map<String, Object> enumSchema(Class<?> enumClass) {
         Object[] constants = enumClass.getEnumConstants();
         List<String> values = Arrays.stream(constants)
-            .map(Object::toString)
-            .toList();
+                .map(Object::toString)
+                .toList();
 
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "string");
@@ -160,7 +162,7 @@ public class SchemaGenerator {
         }
 
         throw new FastMcpException(
-            "Cannot determine parameter name. Use @JsonProperty or compile with -parameters"
+                "Cannot determine parameter name. Use @JsonProperty or compile with -parameters"
         );
     }
 }
@@ -171,13 +173,17 @@ public class SchemaGenerator {
 ## Tests
 
 ### SchemaGeneratorTest.java
+
 ```java
 package io.github.fastmcp.schema;
 
+import com.ultrathink.fastmcp.schema.SchemaGenerator;
 import org.junit.jupiter.api.Test;
+
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class SchemaGeneratorTest {
@@ -187,7 +193,8 @@ class SchemaGeneratorTest {
     @Test
     void testPrimitiveTypes() throws Exception {
         class TestClass {
-            public void method(int a, String b, boolean c) {}
+            public void method(int a, String b, boolean c) {
+            }
         }
 
         Method method = TestClass.class.getMethod("method", int.class, String.class, boolean.class);
@@ -203,7 +210,8 @@ class SchemaGeneratorTest {
     @Test
     void testListType() throws Exception {
         class TestClass {
-            public void method(List<String> items) {}
+            public void method(List<String> items) {
+            }
         }
 
         Method method = TestClass.class.getMethod("method", List.class);
@@ -220,8 +228,11 @@ class SchemaGeneratorTest {
     @Test
     void testCaching() throws Exception {
         class TestClass {
-            public void method1(String a) {}
-            public void method2(String b) {}
+            public void method1(String a) {
+            }
+
+            public void method2(String b) {
+            }
         }
 
         Method m1 = TestClass.class.getMethod("method1", String.class);

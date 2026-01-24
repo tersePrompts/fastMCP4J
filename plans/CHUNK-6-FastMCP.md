@@ -23,15 +23,23 @@ public enum TransportType {
 ```
 
 ### FastMCP.java
+
 ```java
 package io.github.fastmcp.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.fastmcp.adapter.*;
-import io.github.fastmcp.exception.FastMcpException;
-import io.github.fastmcp.model.*;
-import io.github.fastmcp.scanner.AnnotationScanner;
-import io.github.fastmcp.schema.SchemaGenerator;
+import com.ultrathink.fastmcp.adapter.ArgumentBinder;
+import com.ultrathink.fastmcp.adapter.ResponseMarshaller;
+import com.ultrathink.fastmcp.adapter.ToolHandler;
+import com.ultrathink.fastmcp.core.McpAsyncServer;
+import com.ultrathink.fastmcp.core.TransportType;
+import com.ultrathink.fastmcp.model.PromptMeta;
+import com.ultrathink.fastmcp.model.ResourceMeta;
+import com.ultrathink.fastmcp.model.ServerMeta;
+import com.ultrathink.fastmcp.model.ToolMeta;
+import exception.com.ultrathink.fastmcp.FastMcpException;
+import scanner.com.ultrathink.fastmcp.AnnotationScanner;
+import schema.com.ultrathink.fastmcp.SchemaGenerator;
 import io.modelcontextprotocol.sdk.server.McpServer;
 import io.modelcontextprotocol.sdk.server.McpAsyncServer;
 import io.modelcontextprotocol.sdk.server.transport.StdioServerTransportProvider;
@@ -80,7 +88,7 @@ public class FastMCP {
 
         McpServerTransportProvider provider = createTransport();
         McpServer.AsyncSpecification spec = McpServer.async(provider)
-            .serverInfo(meta.getName(), meta.getVersion());
+                .serverInfo(meta.getName(), meta.getVersion());
 
         if (!meta.getInstructions().isEmpty()) {
             spec.instructions(meta.getInstructions());
@@ -105,16 +113,16 @@ public class FastMCP {
         Map<String, Object> schema = schemaGen.generate(toolMeta.getMethod());
 
         Tool tool = Tool.builder()
-            .name(toolMeta.getName())
-            .description(toolMeta.getDescription())
-            .inputSchema(schema)
-            .build();
+                .name(toolMeta.getName())
+                .description(toolMeta.getDescription())
+                .inputSchema(schema)
+                .build();
 
         ToolHandler handler = new ToolHandler(
-            serverInstance,
-            toolMeta,
-            new ArgumentBinder(),
-            new ResponseMarshaller()
+                serverInstance,
+                toolMeta,
+                new ArgumentBinder(),
+                new ResponseMarshaller()
         );
 
         spec.tool(tool, handler.asHandler());
@@ -122,16 +130,16 @@ public class FastMCP {
 
     private void registerResource(McpServer.AsyncSpecification spec, ResourceMeta resMeta) {
         Resource resource = Resource.builder()
-            .uri(resMeta.getUri())
-            .name(resMeta.getName())
-            .description(resMeta.getDescription())
-            .mimeType(resMeta.getMimeType())
-            .build();
+                .uri(resMeta.getUri())
+                .name(resMeta.getName())
+                .description(resMeta.getDescription())
+                .mimeType(resMeta.getMimeType())
+                .build();
 
         ResourceHandler handler = new ResourceHandler(
-            serverInstance,
-            resMeta,
-            new ArgumentBinder()
+                serverInstance,
+                resMeta,
+                new ArgumentBinder()
         );
 
         spec.resource(resource, handler.asHandler());
@@ -139,14 +147,14 @@ public class FastMCP {
 
     private void registerPrompt(McpServer.AsyncSpecification spec, PromptMeta promptMeta) {
         Prompt prompt = Prompt.builder()
-            .name(promptMeta.getName())
-            .description(promptMeta.getDescription())
-            .build();
+                .name(promptMeta.getName())
+                .description(promptMeta.getDescription())
+                .build();
 
         PromptHandler handler = new PromptHandler(
-            serverInstance,
-            promptMeta,
-            new ArgumentBinder()
+                serverInstance,
+                promptMeta,
+                new ArgumentBinder()
         );
 
         spec.prompt(prompt, handler.asHandler());
@@ -188,13 +196,17 @@ public class FastMCP {
 ## Tests
 
 ### FastMCPTest.java
+
 ```java
 package io.github.fastmcp.core;
 
-import io.github.fastmcp.annotations.McpServer;
-import io.github.fastmcp.annotations.McpTool;
+import com.ultrathink.fastmcp.core.FastMCP;
+import com.ultrathink.fastmcp.core.McpAsyncServer;
+import com.ultrathink.fastmcp.annotations.McpServer;
+import annotations.com.ultrathink.fastmcp.McpTool;
 import io.modelcontextprotocol.sdk.server.McpAsyncServer;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class FastMCPTest {
@@ -210,8 +222,8 @@ class FastMCPTest {
     @Test
     void testBuildServerFromClass() {
         McpAsyncServer server = FastMCP.server(TestServer.class)
-            .stdio()
-            .build();
+                .stdio()
+                .build();
 
         assertNotNull(server);
     }

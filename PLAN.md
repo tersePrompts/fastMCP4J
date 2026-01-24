@@ -871,13 +871,15 @@ public class PromptHandler {
 - `adapter/PromptHandlerTest.java` (test)
 
 **ResourceHandler spec**:
+
 ```java
 package io.github.fastmcp.adapter;
 
-import io.github.fastmcp.model.ResourceMeta;
-import io.github.fastmcp.exception.FastMcpException;
+import com.ultrathink.fastmcp.adapter.ArgumentBinder;
+import com.ultrathink.fastmcp.adapter.ResponseMarshaller;
+import com.ultrathink.fastmcp.model.ResourceMeta;
 import reactor.core.publisher.Mono;
-import java.lang.reflect.Method;
+
 import java.util.List;
 import java.util.function.BiFunction;
 
@@ -888,12 +890,12 @@ public class ResourceHandler {
     ResourceMeta meta;
     ArgumentBinder binder;
     ResponseMarshaller marshaller;
-    
+
     public BiFunction<McpAsyncServerExchange, ReadResourceRequest, Mono<ReadResourceResult>> asHandler() {
         return (exchange, request) -> {
             try {
                 Object result = meta.getMethod().invoke(instance);
-                
+
                 if (meta.isAsync()) {
                     return ((Mono<?>) result).map(this::toResourceResult);
                 } else {
@@ -904,42 +906,43 @@ public class ResourceHandler {
             }
         };
     }
-    
+
     private ReadResourceResult toResourceResult(Object value) {
         CallToolResult textResult = marshaller.marshal(value);
         String content = textResult.getContent().isEmpty() ? "" : textResult.getContent().get(0).getText();
-        
+
         ResourceContent resourceContent = new ResourceContent(
-            meta.getMimeType(),
-            content
+                meta.getMimeType(),
+                content
         );
-        
+
         return ReadResourceResult.builder()
-            .contents(List.of(resourceContent))
-            .build();
+                .contents(List.of(resourceContent))
+                .build();
     }
-    
+
     private ReadResourceResult errorResult(Exception e) {
         ResourceContent errorContent = new ResourceContent(
-            "text/plain",
-            "Error: " + e.getMessage()
+                "text/plain",
+                "Error: " + e.getMessage()
         );
-        
+
         return ReadResourceResult.builder()
-            .contents(List.of(errorContent))
-            .build();
+                .contents(List.of(errorContent))
+                .build();
     }
 }
 ```
 
 **PromptHandler spec**:
+
 ```java
 package io.github.fastmcp.adapter;
 
-import io.github.fastmcp.model.PromptMeta;
-import io.github.fastmcp.exception.FastMcpException;
+import com.ultrathink.fastmcp.adapter.ArgumentBinder;
+import com.ultrathink.fastmcp.model.PromptMeta;
 import reactor.core.publisher.Mono;
-import java.lang.reflect.Method;
+
 import java.util.List;
 import java.util.function.BiFunction;
 
@@ -949,12 +952,12 @@ public class PromptHandler {
     Object instance;
     PromptMeta meta;
     ArgumentBinder binder;
-    
+
     public BiFunction<McpAsyncServerExchange, GetPromptRequest, Mono<GetPromptResult>> asHandler() {
         return (exchange, request) -> {
             try {
                 Object result = meta.getMethod().invoke(instance);
-                
+
                 if (meta.isAsync()) {
                     return ((Mono<?>) result).map(this::toPromptResult);
                 } else {
@@ -965,29 +968,29 @@ public class PromptHandler {
             }
         };
     }
-    
+
     private GetPromptResult toPromptResult(Object value) {
         String text = value instanceof String ? (String) value : value.toString();
-        
+
         PromptMessage message = new PromptMessage(
-            "user",
-            text
+                "user",
+                text
         );
-        
+
         return GetPromptResult.builder()
-            .messages(List.of(message))
-            .build();
+                .messages(List.of(message))
+                .build();
     }
-    
+
     private GetPromptResult errorResult(Exception e) {
         PromptMessage error = new PromptMessage(
-            "user",
-            "Error: " + e.getMessage()
+                "user",
+                "Error: " + e.getMessage()
         );
-        
+
         return GetPromptResult.builder()
-            .messages(List.of(error))
-            .build();
+                .messages(List.of(error))
+                .build();
     }
 }
 ```

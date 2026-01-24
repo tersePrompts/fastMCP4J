@@ -30,10 +30,13 @@ public class FastMcpException extends RuntimeException {
 ## Tests
 
 ### FastMcpExceptionTest.java
+
 ```java
 package io.github.fastmcp.exception;
 
+import com.ultrathink.fastmcp.exception.FastMcpException;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class FastMcpExceptionTest {

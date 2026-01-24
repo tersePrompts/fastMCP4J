@@ -15,12 +15,13 @@
 ## Implementation
 
 ### ArgumentBinder.java
+
 ```java
 package io.github.fastmcp.adapter;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.fastmcp.exception.FastMcpException;
+import exception.com.ultrathink.fastmcp.FastMcpException;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -53,18 +54,19 @@ public class ArgumentBinder {
         }
 
         throw new FastMcpException(
-            "Cannot determine parameter name. Use @JsonProperty or compile with -parameters"
+                "Cannot determine parameter name. Use @JsonProperty or compile with -parameters"
         );
     }
 }
 ```
 
 ### ResponseMarshaller.java
+
 ```java
 package io.github.fastmcp.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.fastmcp.exception.FastMcpException;
+import exception.com.ultrathink.fastmcp.FastMcpException;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 
@@ -92,25 +94,28 @@ public class ResponseMarshaller {
         };
 
         return CallToolResult.builder()
-            .content(List.of(new TextContent(text)))
-            .isError(false)
-            .build();
+                .content(List.of(new TextContent(text)))
+                .isError(false)
+                .build();
     }
 
     private CallToolResult emptyResult() {
         return CallToolResult.builder()
-            .content(List.of())
-            .isError(false)
-            .build();
+                .content(List.of())
+                .isError(false)
+                .build();
     }
 }
 ```
 
 ### ToolHandler.java
+
 ```java
 package io.github.fastmcp.adapter;
 
-import io.github.fastmcp.model.ToolMeta;
+import com.ultrathink.fastmcp.adapter.ArgumentBinder;
+import com.ultrathink.fastmcp.adapter.ResponseMarshaller;
+import com.ultrathink.fastmcp.model.ToolMeta;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
@@ -147,18 +152,20 @@ public class ToolHandler {
 
     private CallToolResult errorResult(Exception e) {
         return CallToolResult.builder()
-            .content(List.of(new TextContent(e.getMessage())))
-            .isError(true)
-            .build();
+                .content(List.of(new TextContent(e.getMessage())))
+                .isError(true)
+                .build();
     }
 }
 ```
 
 ### ResourceHandler.java
+
 ```java
 package io.github.fastmcp.adapter;
 
-import io.github.fastmcp.model.ResourceMeta;
+import com.ultrathink.fastmcp.adapter.ArgumentBinder;
+import com.ultrathink.fastmcp.model.ResourceMeta;
 import io.modelcontextprotocol.spec.McpSchema.ReadResourceRequest;
 import io.modelcontextprotocol.spec.McpSchema.ReadResourceResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
@@ -182,8 +189,8 @@ public class ResourceHandler {
                 String text = result != null ? result.toString() : "";
 
                 ReadResourceResult response = ReadResourceResult.builder()
-                    .contents(List.of(new TextContent(text)))
-                    .build();
+                        .contents(List.of(new TextContent(text)))
+                        .build();
 
                 if (meta.isAsync()) {
                     return ((Mono<?>) result).map(v -> response);
@@ -199,10 +206,12 @@ public class ResourceHandler {
 ```
 
 ### PromptHandler.java
+
 ```java
 package io.github.fastmcp.adapter;
 
-import io.github.fastmcp.model.PromptMeta;
+import com.ultrathink.fastmcp.adapter.ArgumentBinder;
+import com.ultrathink.fastmcp.model.PromptMeta;
 import io.modelcontextprotocol.spec.McpSchema.GetPromptRequest;
 import io.modelcontextprotocol.spec.McpSchema.GetPromptResult;
 import io.modelcontextprotocol.spec.McpTransport.McpAsyncServerExchange;
@@ -230,10 +239,14 @@ public class PromptHandler {
 ## Tests
 
 ### AdapterTest.java
+
 ```java
 package io.github.fastmcp.adapter;
 
-import io.github.fastmcp.model.ToolMeta;
+import com.ultrathink.fastmcp.adapter.ArgumentBinder;
+import com.ultrathink.fastmcp.adapter.ResponseMarshaller;
+import com.ultrathink.fastmcp.adapter.ToolHandler;
+import com.ultrathink.fastmcp.model.ToolMeta;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import org.junit.jupiter.api.Test;
@@ -259,16 +272,16 @@ class AdapterTest {
         ToolMeta meta = new ToolMeta("add", "Add numbers", method, false);
 
         ToolHandler handler = new ToolHandler(
-            instance,
-            meta,
-            new ArgumentBinder(),
-            new ResponseMarshaller()
+                instance,
+                meta,
+                new ArgumentBinder(),
+                new ResponseMarshaller()
         );
 
         CallToolRequest request = CallToolRequest.builder()
-            .name("add")
-            .arguments(Map.of("a", 3, "b", 5))
-            .build();
+                .name("add")
+                .arguments(Map.of("a", 3, "b", 5))
+                .build();
 
         Mono<CallToolResult> result = handler.asHandler().apply(null, request);
         CallToolResult res = result.block();

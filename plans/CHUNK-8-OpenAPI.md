@@ -54,12 +54,17 @@ public class Schema {
 ```
 
 ### OpenApiGenerator.java
+
 ```java
 package io.github.fastmcp.openapi;
 
-import io.github.fastmcp.model.ServerMeta;
-import io.github.fastmcp.model.ToolMeta;
-import io.github.fastmcp.schema.SchemaGenerator;
+import model.com.ultrathink.fastmcp.ServerMeta;
+import model.com.ultrathink.fastmcp.ToolMeta;
+import com.ultrathink.fastmcp.openapi.OpenApiInfo;
+import com.ultrathink.fastmcp.openapi.OpenApiSpec;
+import com.ultrathink.fastmcp.openapi.Operation;
+import com.ultrathink.fastmcp.openapi.PathItem;
+import com.ultrathink.fastmcp.schema.SchemaGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
@@ -74,15 +79,15 @@ public class OpenApiGenerator {
 
     public OpenApiSpec generate(ServerMeta meta) {
         OpenApiInfo info = new OpenApiInfo(
-            meta.getName() + " API",
-            meta.getVersion(),
-            meta.getInstructions()
+                meta.getName() + " API",
+                meta.getVersion(),
+                meta.getInstructions()
         );
 
         return new OpenApiSpec(
-            "3.0.0",
-            info,
-            buildPaths(meta)
+                "3.0.0",
+                info,
+                buildPaths(meta)
         );
     }
 
@@ -97,23 +102,23 @@ public class OpenApiGenerator {
 
     private Map<String, PathItem> buildPaths(ServerMeta meta) {
         return meta.getTools().stream()
-            .collect(java.util.stream.Collectors.toMap(
-                tool -> "/tools/" + tool.getName(),
-                this::toPathItem
-            ));
+                .collect(java.util.stream.Collectors.toMap(
+                        tool -> "/tools/" + tool.getName(),
+                        this::toPathItem
+                ));
     }
 
     private PathItem toPathItem(ToolMeta tool) {
         Operation operation = new Operation(
-            tool.getDescription(),
-            tool.getDescription(),
-            java.util.Map.of(),
-            null,
-            java.util.Map.of(
-                "200", "Success",
-                "400", "Bad Request",
-                "500", "Internal Server Error"
-            )
+                tool.getDescription(),
+                tool.getDescription(),
+                java.util.Map.of(),
+                null,
+                java.util.Map.of(
+                        "200", "Success",
+                        "400", "Bad Request",
+                        "500", "Internal Server Error"
+                )
         );
 
         return new PathItem(null, operation);
@@ -122,38 +127,40 @@ public class OpenApiGenerator {
 ```
 
 ### Add to FastMCP.java
+
 ```java
 // Add import
-import io.github.fastmcp.openapi.OpenApiGenerator;
 
 // Add to FastMCP class
-public String generateOpenApi() {
-    OpenApiGenerator generator = new OpenApiGenerator();
-    ServerMeta meta = scanner.scan(serverClass);
-    return generator.toJson(meta);
-}
+public String generateOpenApi(){
+        OpenApiGenerator generator=new OpenApiGenerator();
+        ServerMeta meta=scanner.scan(serverClass);
+        return generator.toJson(meta);
+        }
 
-public void generateOpenApiFile(String outputPath) {
-    String json = generateOpenApi();
-    try {
+public void generateOpenApiFile(String outputPath){
+        String json=generateOpenApi();
+        try{
         java.nio.file.Files.writeString(
-            java.nio.file.Path.of(outputPath),
-            json
+        java.nio.file.Path.of(outputPath),
+        json
         );
-    } catch (Exception e) {
-        throw new RuntimeException("Failed to write OpenAPI file", e);
-    }
-}
+        }catch(Exception e){
+        throw new RuntimeException("Failed to write OpenAPI file",e);
+        }
+        }
 ```
 
 ## Tests
+
 ```java
 package io.github.fastmcp.openapi;
 
-import io.github.fastmcp.annotations.McpServer;
-import io.github.fastmcp.annotations.McpTool;
-import io.github.fastmcp.core.FastMCP;
+import annotations.com.ultrathink.fastmcp.McpServer;
+import annotations.com.ultrathink.fastmcp.McpTool;
+import core.com.ultrathink.fastmcp.FastMCP;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @McpServer(name = "TestServer", version = "1.0.0")
