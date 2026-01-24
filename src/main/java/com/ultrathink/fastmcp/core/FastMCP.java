@@ -84,9 +84,17 @@ public final class FastMCP {
         };
 
         builder.serverInfo(meta.getName(), meta.getVersion())
-                .capabilities(McpSchema.ServerCapabilities.builder().tools(true).logging().completions().build());
+                .capabilities(McpSchema.ServerCapabilities.builder()
+                    .tools(true)
+                    .resources(true, false)  // resources enabled, no list changes
+                    .prompts(true)           // prompts enabled
+                    .logging()
+                    .completions()
+                    .build());
 
         meta.getTools().forEach(t -> builder.tools(buildTool(t, instance)));
+        meta.getResources().forEach(r -> builder.resources(buildResource(r, instance)));
+        meta.getPrompts().forEach(p -> builder.prompts(buildPrompt(p, instance)));
         return builder.build();
     }
 
@@ -116,6 +124,31 @@ public final class FastMCP {
 
         var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(), new ResponseMarshaller());
         return new McpServerFeatures.AsyncToolSpecification(tool, null, handler.asHandler());
+    }
+
+    @SuppressWarnings("unchecked")
+    private McpServerFeatures.AsyncResourceSpecification buildResource(ResourceMeta resourceMeta, Object instance) {
+        var resource = McpSchema.Resource.builder()
+                .uri(resourceMeta.getUri())
+                .name(resourceMeta.getName())
+                .description(resourceMeta.getDescription())
+                .mimeType(resourceMeta.getMimeType() != null ? resourceMeta.getMimeType() : "text/plain")
+                .build();
+
+        var handler = new ResourceHandler(instance, resourceMeta, new ArgumentBinder(), new ResourceResponseMarshaller());
+        return new McpServerFeatures.AsyncResourceSpecification(resource, handler.asHandler());
+    }
+
+    @SuppressWarnings("unchecked")
+    private McpServerFeatures.AsyncPromptSpecification buildPrompt(PromptMeta promptMeta, Object instance) {
+        var prompt = new McpSchema.Prompt(
+            promptMeta.getName(),
+            promptMeta.getDescription(),
+            List.of()  // No arguments by default
+        );
+
+        var handler = new PromptHandler(instance, promptMeta, new ArgumentBinder(), new PromptResponseMarshaller());
+        return new McpServerFeatures.AsyncPromptSpecification(prompt, handler.asHandler());
     }
 
     private static McpTransportContext extractContext(HttpServletRequest req) {
