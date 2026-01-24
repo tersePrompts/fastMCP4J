@@ -40,10 +40,10 @@ public class CalculatorServer {
 | **Response Marshalling** | Yes | Yes | ✅ Implemented |
 | **Parameter Validation** | Built-in types + custom | Primitives + POJO | 🔄 In Progress |
 | **CLI Tools** | `fastmcp dev`, `fastmcp install` | Not implemented | ⬜ Pending |
-| **OpenAPI Generation** | From FastAPI specs | Not implemented | ⬜ Pending |
+| **OpenAPI Generation** | From FastAPI specs | Yes (ServerMeta → OpenAPI 3.0) | ✅ Implemented |
 | **Resource Templates** | URI template support | Basic `@McpResource(uri="...")` | 🔄 In Progress |
 | **Content Blocks** | Yes | Text-only | 🔄 In Progress |
-| **Notifications** | Yes | Not implemented | ⬜ Pending |
+| **Notifications** | Yes | Yes (logging, progress, resource changes) | ✅ Implemented |
 | **Completion/Autocomplete** | Yes | Not implemented | ⬜ Pending |
 | **Component Visibility** | Yes | Not implemented | ⬜ Pending |
 | **MCP Context Access** | Yes | Not implemented | ⬜ Pending |
