@@ -1,5 +1,21 @@
 package io.github.fastmcp.adapter;
 
+/**
+ * ToolHandler
+ * Bridges a ToolMeta (reflective method) to a Reactor-based MCP tool handler.
+ *
+ * This class encapsulates how a server object's annotated tool method is invoked
+ * when a client calls the tool. It wires together argument binding, method
+ * invocation, and response marshalling.
+ *
+ * Key behavior:
+ * - Build a BiFunction<McpAsyncServerExchange, CallToolRequest, Mono<CallToolResult>>
+ * - Bind method arguments via ArgumentBinder
+ * - Invoke the method reflectively
+ * - If the tool is marked as async, unwrap the Mono/Flux and marshal results
+ * - Convert exceptions into error CallToolResults
+ */
+
 import io.github.fastmcp.model.ToolMeta;
 import io.github.fastmcp.adapter.ArgumentBinder;
 import io.github.fastmcp.adapter.ResponseMarshaller;
