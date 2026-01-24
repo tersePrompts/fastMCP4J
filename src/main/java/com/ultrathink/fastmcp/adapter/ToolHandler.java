@@ -9,7 +9,7 @@ package com.ultrathink.fastmcp.adapter;
  * invocation, and response marshalling.
  *
  * Key behavior:
- * - Build a BiFunction<Object, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>>
+ * - Build a BiFunction<McpAsyncServerExchange, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>>
  * - Bind method arguments via ArgumentBinder
  * - Invoke the method reflectively
  * - If the tool is marked as async, unwrap the Mono/Flux and marshal results
@@ -18,6 +18,7 @@ package com.ultrathink.fastmcp.adapter;
 
 import com.ultrathink.fastmcp.model.ToolMeta;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import reactor.core.publisher.Mono;
 import java.util.List;
 import java.util.function.BiFunction;
@@ -36,7 +37,7 @@ public class ToolHandler {
         this.marshaller = marshaller;
     }
 
-    public BiFunction<Object, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>> asHandler() {
+    public BiFunction<McpAsyncServerExchange, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>> asHandler() {
         return (exchange, request) -> {
             try {
                 Object[] args = binder.bind(meta.getMethod(), request.arguments());

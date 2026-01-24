@@ -94,8 +94,7 @@ class AdapterTest {
         args.put("message", "hello");
         McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testTool", args);
         
-        Object exchange = new Object();
-        Mono<McpSchema.CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
+        Mono<McpSchema.CallToolResult> resultMono = handler.asHandler().apply(null, request);
 
         McpSchema.CallToolResult result = resultMono.block();
         assertNotNull(result);
@@ -125,8 +124,7 @@ class AdapterTest {
         args.put("message", "hello");
         McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testTool", args);
         
-        Object exchange = new Object();
-        Mono<McpSchema.CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
+        Mono<McpSchema.CallToolResult> resultMono = handler.asHandler().apply(null, request);
 
         McpSchema.CallToolResult result = resultMono.block();
         assertNotNull(result);
@@ -158,8 +156,7 @@ class AdapterTest {
         args.put("a", 3);  // Missing 'b' parameter
         McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testTool", args);
         
-        Object exchange = new Object();
-        Mono<McpSchema.CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
+        Mono<McpSchema.CallToolResult> resultMono = handler.asHandler().apply(null, request);
 
         McpSchema.CallToolResult result = resultMono.block();
         assertNotNull(result);
