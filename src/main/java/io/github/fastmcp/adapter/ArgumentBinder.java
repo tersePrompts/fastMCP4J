@@ -18,10 +18,24 @@ public class ArgumentBinder {
         for (int i = 0; i < params.length; i++) {
             String name = getParamName(params[i]);
             Object raw = args.get(name);
+            
+            // Validate that required parameters are not null
+            if (raw == null && !isNullAllowed(params[i].getType())) {
+                throw new IllegalArgumentException(
+                    "Missing required parameter: " + name
+                );
+            }
+            
             bound[i] = mapper.convertValue(raw, params[i].getType());
         }
 
         return bound;
+    }
+
+    private boolean isNullAllowed(Class<?> type) {
+        // Primitive types cannot be null
+        // Wrapper types and other reference types can be null
+        return !type.isPrimitive();
     }
 
     private String getParamName(Parameter p) {

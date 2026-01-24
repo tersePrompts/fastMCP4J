@@ -10,9 +10,12 @@ import io.github.fastmcp.model.ServerMeta;
 import io.github.fastmcp.model.ToolMeta;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import reactor.core.publisher.Mono;
+import io.github.fastmcp.openapi.OpenApiGenerator;
+import io.github.fastmcp.notification.NotificationSender;
 
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.function.Consumer;
 
 public class FastMCP {
     private final Class<?> serverClass;
@@ -21,6 +24,7 @@ public class FastMCP {
     private final AnnotationScanner scanner = new AnnotationScanner();
     private final SchemaGenerator schemaGenerator = new SchemaGenerator();
     private final ObjectMapper mapper = new ObjectMapper();
+    private NotificationSender notificationSender;
 
     private FastMCP(Class<?> serverClass) {
         this.serverClass = serverClass;
@@ -51,6 +55,33 @@ public class FastMCP {
         build().awaitTermination();
     }
 
+    public FastMCP withNotificationSender(Consumer<Object> sendFunction) {
+        this.notificationSender = new NotificationSender(sendFunction);
+        return this;
+    }
+
+    public NotificationSender getNotificationSender() {
+        return notificationSender;
+    }
+
+    public String generateOpenApi() {
+        OpenApiGenerator generator = new OpenApiGenerator();
+        ServerMeta meta = scanner.scan(serverClass);
+        return generator.toJson(meta);
+    }
+
+    public void generateOpenApiFile(String outputPath) {
+        String json = generateOpenApi();
+        try {
+            java.nio.file.Files.writeString(
+                java.nio.file.Path.of(outputPath),
+                json
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to write OpenAPI file", e);
+        }
+    }
+
     private class RealMcpAsyncServer implements McpAsyncServer {
         private ServerMeta meta;
 
@@ -72,12 +103,12 @@ public class FastMCP {
         }
 
         private Object createHandlerForTool(ToolMeta toolMeta) {
-            ToolHandler handler = new ToolHandler();
-            handler.instance = serverInstance;
-            handler.meta = toolMeta;
-            handler.binder = new ArgumentBinder();
-            handler.marshaller = new ResponseMarshaller();
-            return handler.asHandler();
+            return new ToolHandler(
+                serverInstance,
+                toolMeta,
+                new ArgumentBinder(),
+                new ResponseMarshaller()
+            ).asHandler();
         }
     }
 }

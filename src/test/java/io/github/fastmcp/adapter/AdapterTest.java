@@ -80,11 +80,12 @@ class AdapterTest {
             .findFirst()
             .orElseThrow();
         
-        ToolHandler handler = new ToolHandler();
-        handler.instance = server;
-        handler.meta = toolMeta;
-        handler.binder = new ArgumentBinder();
-        handler.marshaller = new ResponseMarshaller();
+        ToolHandler handler = new ToolHandler(
+            server,
+            toolMeta,
+            new ArgumentBinder(),
+            new ResponseMarshaller()
+        );
         
         Map<String, Object> args = new HashMap<>();
         args.put("message", "hello");
@@ -110,11 +111,12 @@ class AdapterTest {
             .findFirst()
             .orElseThrow();
         
-        ToolHandler handler = new ToolHandler();
-        handler.instance = server;
-        handler.meta = toolMeta;
-        handler.binder = new ArgumentBinder();
-        handler.marshaller = new ResponseMarshaller();
+        ToolHandler handler = new ToolHandler(
+            server,
+            toolMeta,
+            new ArgumentBinder(),
+            new ResponseMarshaller()
+        );
         
         Map<String, Object> args = new HashMap<>();
         args.put("message", "hello");
@@ -135,19 +137,22 @@ class AdapterTest {
         AnnotationScanner scanner = new AnnotationScanner();
         ServerMeta meta = scanner.scan(TestServer.class);
         
+        // Use 'add' method which has primitive int parameters
         ToolMeta toolMeta = meta.getTools().stream()
-            .filter(t -> t.getName().equals("echo"))
+            .filter(t -> t.getName().equals("add"))
             .findFirst()
             .orElseThrow();
         
-        ToolHandler handler = new ToolHandler();
-        handler.instance = server;
-        handler.meta = toolMeta;
-        handler.binder = new ArgumentBinder();
-        handler.marshaller = new ResponseMarshaller();
+        ToolHandler handler = new ToolHandler(
+            server,
+            toolMeta,
+            new ArgumentBinder(),
+            new ResponseMarshaller()
+        );
         
-        // Missing required argument should cause error
+        // Missing required primitive argument should cause error
         Map<String, Object> args = new HashMap<>();
+        args.put("a", 3);  // Missing 'b' parameter
         CallToolRequest request = new CallToolRequest(args);
         
         McpAsyncServerExchange exchange = new McpAsyncServerExchange() {};

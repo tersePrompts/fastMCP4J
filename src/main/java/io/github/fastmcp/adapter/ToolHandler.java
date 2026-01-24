@@ -29,10 +29,17 @@ import io.modelcontextprotocol.sdk.*; // MCP SDK common types, may be resolved b
 
 // Minimal tool handler adapter, wraps annotated method as a Reactor-based handler
 public class ToolHandler {
-    Object instance;
-    ToolMeta meta;
-    ArgumentBinder binder;
-    ResponseMarshaller marshaller;
+    private final Object instance;
+    private final ToolMeta meta;
+    private final ArgumentBinder binder;
+    private final ResponseMarshaller marshaller;
+
+    public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder, ResponseMarshaller marshaller) {
+        this.instance = instance;
+        this.meta = meta;
+        this.binder = binder;
+        this.marshaller = marshaller;
+    }
 
     public BiFunction<McpAsyncServerExchange, CallToolRequest, Mono<CallToolResult>> asHandler() {
         return (exchange, request) -> {

@@ -1,0 +1,24 @@
+Title: FastMCP4J Code Style Guidelines
+
+**Code Style**:
+- Terse, direct code - no verbose naming
+- Lombok everywhere - use `@Data`, `@Builder`, `@Value`, `@Slf4j`
+- No comments unless logic is genuinely non-obvious
+- Prefer composition over inheritance
+- Immutable by default (records, `@Value`)
+
+**Architecture**:
+- Pure Java 17+ (no Spring, no Jakarta EE)
+- Stateless (no session management, no state machines)
+- Minimal scaffolding - no abstract base classes unless necessary
+- Each public class has corresponding test class
+
+**Logging & Observability**:
+- Minimal logging (errors only, no debug/trace)
+- No telemetry, no metrics (defer to v0.2+)
+- Fail fast with clear exception messages
+
+**Testing**:
+- Every feature file → corresponding test file
+- JUnit 5, no mocking framework (use real instances)
+- Test names: `testMethodName_Scenario_ExpectedBehavior()`
