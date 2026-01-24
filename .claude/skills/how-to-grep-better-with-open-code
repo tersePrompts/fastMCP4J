@@ -1,0 +1,19 @@
+Title: How to grep better with OpenCode
+
+- Use the Glob tool for file discovery: pattern "**/*.java" to locate Java sources.
+- Use the Grep tool to search contents with regex patterns; it returns file paths and line numbers with matches.
+- Use Read to inspect a specific file at a given path; optional offset/limit for long files.
+- Use multiple tool calls in parallel when tasks are independent to speed things up.
+- Use the Task agent for slash commands to drive code search when appropriate.
+- When you need to inspect results, Read matching files or show the full matches from Grep.
+
+Example patterns:
+- Find all occurrences of @McpTool in the repo: pattern: "@McpTool" include: "*.java"
+- Show surrounding lines around a match (assuming you know the file and line): Read(filePath, offset=line-5, limit=10)
+- List all files under a directory: glob(pattern="schema/**/*.java")
+- Quick search for TODOs across code: grep(pattern="TODO", path="src", include="*.java")
+
+Notes:
+- Use precise regexes to avoid noise.
+- Scope searches to relevant packages to keep responses fast.
+- This file documents practical search patterns for OpenCode workflows.

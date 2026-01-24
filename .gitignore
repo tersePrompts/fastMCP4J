@@ -34,5 +34,3 @@ Thumbs.db
 *.war
 *.ear
 
-# Claude
-.claude/
