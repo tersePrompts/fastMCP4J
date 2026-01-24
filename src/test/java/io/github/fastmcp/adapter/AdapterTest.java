@@ -3,7 +3,8 @@ package io.github.fastmcp.adapter;
 import io.github.fastmcp.annotations.*;
 import io.github.fastmcp.model.*;
 import io.github.fastmcp.scanner.AnnotationScanner;
-import io.modelcontextprotocol.sdk.*;
+import io.modelcontextprotocol.spec.McpSchema.*;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import java.util.Map;
@@ -30,6 +31,28 @@ class AdapterTest {
         public int add(int a, int b) {
             return a + b;
         }
+
+        @McpResource(uri = "file://config.txt", description = "Config file")
+        public String getConfig() {
+            return "config: value";
+        }
+
+        @McpResource(uri = "file://status.txt", description = "Status file")
+        @McpAsync
+        public Mono<String> getStatus() {
+            return Mono.just("status: ok");
+        }
+
+        @McpPrompt(description = "System prompt")
+        public String getSystemPrompt() {
+            return "You are a helpful assistant.";
+        }
+
+        @McpPrompt(description = "Welcome prompt")
+        @McpAsync
+        public Mono<String> getWelcomePrompt() {
+            return Mono.just("Welcome to the system!");
+        }
     }
 
     @Test
@@ -55,8 +78,9 @@ class AdapterTest {
         CallToolResult result = marshaller.marshal("test message");
         
         assertFalse(result.isError());
-        assertEquals(1, result.getContent().size());
-        assertEquals("test message", result.getContent().get(0).getText());
+        assertEquals(1, result.content().size());
+        assertTrue(result.content().get(0) instanceof TextContent);
+        assertEquals("test message", ((TextContent) result.content().get(0)).text());
     }
 
     @Test
@@ -66,7 +90,7 @@ class AdapterTest {
         CallToolResult result = marshaller.marshal(null);
         
         assertFalse(result.isError());
-        assertEquals(0, result.getContent().size());
+        assertEquals(0, result.content().size());
     }
 
     @Test
@@ -89,15 +113,15 @@ class AdapterTest {
         
         Map<String, Object> args = new HashMap<>();
         args.put("message", "hello");
-        CallToolRequest request = new CallToolRequest(args);
+        CallToolRequest request = new CallToolRequest("echo", args);
         
-        McpAsyncServerExchange exchange = new McpAsyncServerExchange() {};
-        Mono<CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
+        Mono<CallToolResult> resultMono = handler.asHandler().apply(null, request);
         
         CallToolResult result = resultMono.block();
         assertNotNull(result);
         assertFalse(result.isError());
-        assertEquals("echo: hello", result.getContent().get(0).getText());
+        assertTrue(result.content().get(0) instanceof TextContent);
+        assertEquals("echo: hello", ((TextContent) result.content().get(0)).text());
     }
 
     @Test
@@ -120,15 +144,15 @@ class AdapterTest {
         
         Map<String, Object> args = new HashMap<>();
         args.put("message", "hello");
-        CallToolRequest request = new CallToolRequest(args);
+        CallToolRequest request = new CallToolRequest("asyncEcho", args);
         
-        McpAsyncServerExchange exchange = new McpAsyncServerExchange() {};
-        Mono<CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
+        Mono<CallToolResult> resultMono = handler.asHandler().apply(null, request);
         
         CallToolResult result = resultMono.block();
         assertNotNull(result);
         assertFalse(result.isError());
-        assertEquals("async: hello", result.getContent().get(0).getText());
+        assertTrue(result.content().get(0) instanceof TextContent);
+        assertEquals("async: hello", ((TextContent) result.content().get(0)).text());
     }
 
     @Test
@@ -152,15 +176,132 @@ class AdapterTest {
         
         // Missing required primitive argument should cause error
         Map<String, Object> args = new HashMap<>();
-        args.put("a", 3);  // Missing 'b' parameter
-        CallToolRequest request = new CallToolRequest(args);
+        args.put("a",3);  // Missing 'b' parameter
+        CallToolRequest request = new CallToolRequest("add", args);
         
-        McpAsyncServerExchange exchange = new McpAsyncServerExchange() {};
-        Mono<CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
+        Mono<CallToolResult> resultMono = handler.asHandler().apply(null, request);
         
         CallToolResult result = resultMono.block();
         assertNotNull(result);
         assertTrue(result.isError());
-        assertNotNull(result.getContent().get(0).getText());
+        assertTrue(result.content().get(0) instanceof TextContent);
+        assertNotNull(((TextContent) result.content().get(0)).text());
+    }
+
+    @Test
+    void testResourceHandlerSyncInvocation() throws Exception {
+        TestServer server = new TestServer();
+        AnnotationScanner scanner = new AnnotationScanner();
+        ServerMeta meta = scanner.scan(TestServer.class);
+
+        ResourceMeta resourceMeta = meta.getResources().stream()
+            .filter(r -> r.getUri().equals("file://config.txt"))
+            .findFirst()
+            .orElseThrow();
+
+        ResourceHandler handler = new ResourceHandler(
+            server,
+            resourceMeta,
+            new ResponseMarshaller()
+        );
+
+        ReadResourceRequest request = new ReadResourceRequest("file://config.txt");
+
+        Mono<ReadResourceResult> resultMono = handler.asHandler().apply(null, request);
+
+        ReadResourceResult result = resultMono.block();
+        assertNotNull(result);
+        assertFalse(result.contents().isEmpty());
+        assertTrue(result.contents().get(0) instanceof TextResourceContents);
+        assertEquals("config: value", ((TextResourceContents) result.contents().get(0)).text());
+    }
+
+    @Test
+    void testResourceHandlerAsyncInvocation() throws Exception {
+        TestServer server = new TestServer();
+        AnnotationScanner scanner = new AnnotationScanner();
+        ServerMeta meta = scanner.scan(TestServer.class);
+
+        ResourceMeta resourceMeta = meta.getResources().stream()
+            .filter(r -> r.getUri().equals("file://status.txt"))
+            .findFirst()
+            .orElseThrow();
+
+        ResourceHandler handler = new ResourceHandler(
+            server,
+            resourceMeta,
+            new ResponseMarshaller()
+        );
+
+        ReadResourceRequest request = new ReadResourceRequest("file://status.txt");
+
+        Mono<ReadResourceResult> resultMono = handler.asHandler().apply(null, request);
+
+        ReadResourceResult result = resultMono.block();
+        assertNotNull(result);
+        assertFalse(result.contents().isEmpty());
+        assertTrue(result.contents().get(0) instanceof TextResourceContents);
+        assertEquals("status: ok", ((TextResourceContents) result.contents().get(0)).text());
+    }
+
+    @Test
+    void testPromptHandlerSyncInvocation() throws Exception {
+        TestServer server = new TestServer();
+        AnnotationScanner scanner = new AnnotationScanner();
+        ServerMeta meta = scanner.scan(TestServer.class);
+
+        PromptMeta promptMeta = meta.getPrompts().stream()
+            .filter(p -> p.getName().equals("getSystemPrompt"))
+            .findFirst()
+            .orElseThrow();
+
+        PromptHandler handler = new PromptHandler(
+            server,
+            promptMeta
+        );
+
+        GetPromptRequest request = new GetPromptRequest("getSystemPrompt", Map.of());
+
+        Mono<GetPromptResult> resultMono = handler.asHandler().apply(null, request);
+
+        GetPromptResult result = resultMono.block();
+        assertNotNull(result);
+        assertNotNull(result.messages());
+        assertFalse(result.messages().isEmpty());
+        Content content = result.messages().get(0).content();
+        assertTrue(content instanceof TextContent);
+        assertEquals("You are a helpful assistant.", ((TextContent) content).text());
+    }
+
+    @Test
+    void testPromptHandlerAsyncInvocation() throws Exception {
+        TestServer server = new TestServer();
+        AnnotationScanner scanner = new AnnotationScanner();
+        ServerMeta meta = scanner.scan(TestServer.class);
+
+        PromptMeta promptMeta = meta.getPrompts().stream()
+            .filter(p -> p.getName().equals("getWelcomePrompt"))
+            .findFirst()
+            .orElseThrow();
+
+        PromptHandler handler = new PromptHandler(
+            server,
+            promptMeta
+        );
+
+        GetPromptRequest request = new GetPromptRequest("getWelcomePrompt", Map.of());
+
+        Mono<GetPromptResult> resultMono = handler.asHandler().apply(null, request);
+
+        GetPromptResult result = resultMono.block();
+        assertNotNull(result);
+        assertNotNull(result.messages());
+        assertFalse(result.messages().isEmpty());
+        Content content = result.messages().get(0).content();
+        assertTrue(content instanceof TextContent);
+        TextContent textContent = (TextContent) content;
+        String actualText = textContent.text();
+        assertTrue(actualText.contains("Welcome"), "Expected welcome message but got: " + actualText);
+        assertTrue(actualText.contains("system"), "Expected system message but got: " + actualText);
     }
 }

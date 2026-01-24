@@ -25,7 +25,8 @@ import java.util.function.BiFunction;
 import java.lang.reflect.Method;
 import java.util.Map;
 
-import io.modelcontextprotocol.sdk.*; // MCP SDK common types, may be resolved by classpath
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
+import io.modelcontextprotocol.spec.McpSchema.*;
 
 // Minimal tool handler adapter, wraps annotated method as a Reactor-based handler
 public class ToolHandler {
