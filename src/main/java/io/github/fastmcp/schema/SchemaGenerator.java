@@ -1,0 +1,129 @@
+package io.github.fastmcp.schema;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import java.lang.reflect.*;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+import static java.util.Objects.requireNonNull;
+
+/** Simple schema generator converting Java method signatures to JSON-like schemas. */
+public class SchemaGenerator {
+    private final SchemaCache cache = new SchemaCache();
+
+    public Map<String, Object> generate(Method method) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+
+        Map<String, Object> props = new LinkedHashMap<>();
+        List<String> required = new ArrayList<>();
+
+        for (Parameter p : method.getParameters()) {
+            String name = getParamName(p);
+            Map<String, Object> pSchema = generateTypeSchema(p.getParameterizedType());
+            props.put(name, pSchema);
+            if (!isOptional(p)) {
+                required.add(name);
+            }
+        }
+
+        schema.put("properties", props);
+        if (!required.isEmpty()) {
+            schema.put("required", required);
+        }
+        return schema;
+    }
+
+    private Map<String, Object> generateTypeSchema(Type type) {
+        if (cache.has(type)) return cache.get(type);
+
+        Map<String, Object> result;
+        if (type instanceof Class<?> clazz) {
+            result = generateClassSchema(clazz);
+        } else if (type instanceof ParameterizedType pt) {
+            result = generateGenericSchema(pt);
+        } else {
+            throw new FastMcpExceptionInstance("Unsupported type: " + type);
+        }
+
+        cache.put(type, result);
+        return result;
+    }
+
+    private Map<String, Object> generateClassSchema(Class<?> clazz) {
+        if (clazz == String.class) return Map.of("type", "string");
+        if (clazz == int.class || clazz == Integer.class) return Map.of("type", "integer");
+        if (clazz == long.class || clazz == Long.class) return Map.of("type", "integer", "format", "int64");
+        if (clazz == double.class || clazz == Double.class) return Map.of("type", "number");
+        if (clazz == boolean.class || clazz == Boolean.class) return Map.of("type", "boolean");
+        if (clazz.isEnum()) return enumSchema(clazz);
+        if (!clazz.isPrimitive()) return pojoSchema(clazz);
+        throw new FastMcpExceptionInstance("Unsupported class type: " + clazz);
+    }
+
+    private Map<String, Object> pojoSchema(Class<?> clazz) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+
+        Map<String, Object> properties = new LinkedHashMap<>();
+        for (Field field : clazz.getDeclaredFields()) {
+            int mods = field.getModifiers();
+            if (java.lang.reflect.Modifier.isStatic(mods)) continue;
+            if (field.isAnnotationPresent(JsonProperty.class)) {
+                JsonProperty jp = field.getAnnotation(JsonProperty.class);
+                String name = jp.value().isEmpty() ? field.getName() : jp.value();
+                properties.put(name, generateTypeSchema(field.getGenericType()));
+                continue;
+            }
+            if (field.isAnnotationPresent(com.fasterxml.jackson.annotation.JsonIgnore.class)) {
+                continue;
+            }
+            properties.put(field.getName(), generateTypeSchema(field.getGenericType()));
+        }
+        schema.put("properties", properties);
+        return schema;
+    }
+
+    private Map<String, Object> generateGenericSchema(ParameterizedType pt) {
+        Type raw = pt.getRawType();
+        Type[] args = pt.getActualTypeArguments();
+        if (raw == List.class || raw == java.util.List.class) {
+            Map<String, Object> itemSchema = generateTypeSchema(args[0]);
+            return Map.of("type", "array", "items", itemSchema);
+        }
+        if (raw == Map.class) {
+            Map<String, Object> valueSchema = generateTypeSchema(args[1]);
+            return Map.of("type", "object", "additionalProperties", valueSchema);
+        }
+        // Fallback for other generics
+        throw new FastMcpExceptionInstance("Unsupported generic type: " + pt);
+    }
+
+    private Map<String, Object> enumSchema(Class<?> clazz) {
+        Object[] constants = clazz.getEnumConstants();
+        String[] values = Arrays.stream(constants).map(Object::toString).toArray(String[]::new);
+        return Map.of("type", "string", "enum", values);
+    }
+
+    private String getParamName(Parameter p) {
+        JsonProperty ann = p.getAnnotation(JsonProperty.class);
+        if (ann != null && !ann.value().isEmpty()) return ann.value();
+        if (p.isNamePresent()) return p.getName();
+        throw new FastMcpExceptionInstance("Cannot determine parameter name. Use @JsonProperty or compile with -parameters");
+    }
+
+    private boolean isOptional(Parameter p) {
+        Type t = p.getParameterizedType();
+        if (t instanceof ParameterizedType pt) {
+            Type raw = pt.getRawType();
+            if (raw == java.util.Optional.class) return true;
+        }
+        return false;
+    }
+}
+
+// Lightweight wrapper to mirror used exception in this module without importing a central one here
+class FastMcpExceptionInstance extends RuntimeException {
+    FastMcpExceptionInstance(String msg) { super(msg); }
+}
