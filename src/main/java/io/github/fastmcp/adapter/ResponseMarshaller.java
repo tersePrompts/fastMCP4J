@@ -7,15 +7,14 @@ import java.util.List;
 import java.util.Map;
 
 import io.github.fastmcp.exception.FastMcpException;
-import io.modelcontextprotocol.sdk.CallToolResult;
-import io.modelcontextprotocol.sdk.TextContent;
+import io.modelcontextprotocol.spec.McpSchema;
 
 // Lightweight response marshalling to text payloads expected by MCP client
 public class ResponseMarshaller {
     private final ObjectMapper mapper = new ObjectMapper()
             .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
-    public CallToolResult marshal(Object value) {
+    public McpSchema.CallToolResult marshal(Object value) {
         if (value == null) return emptyResult();
 
         String text;
@@ -33,14 +32,14 @@ public class ResponseMarshaller {
             }
         }
 
-        return CallToolResult.builder()
-            .content(List.of(new TextContent(text)))
+        return McpSchema.CallToolResult.builder()
+            .content(List.of(new McpSchema.TextContent(text)))
             .isError(false)
             .build();
     }
 
-    private CallToolResult emptyResult() {
-        return CallToolResult.builder()
+    private McpSchema.CallToolResult emptyResult() {
+        return McpSchema.CallToolResult.builder()
             .content(List.of())
             .isError(false)
             .build();

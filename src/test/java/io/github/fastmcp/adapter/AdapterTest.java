@@ -3,7 +3,7 @@ package io.github.fastmcp.adapter;
 import io.github.fastmcp.annotations.*;
 import io.github.fastmcp.model.*;
 import io.github.fastmcp.scanner.AnnotationScanner;
-import io.modelcontextprotocol.sdk.*;
+import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import java.util.Map;
@@ -52,21 +52,21 @@ class AdapterTest {
     void testResponseMarshalling() {
         ResponseMarshaller marshaller = new ResponseMarshaller();
         
-        CallToolResult result = marshaller.marshal("test message");
+        McpSchema.CallToolResult result = marshaller.marshal("test message");
         
         assertFalse(result.isError());
-        assertEquals(1, result.getContent().size());
-        assertEquals("test message", result.getContent().get(0).getText());
+        assertEquals(1, result.content().size());
+        assertEquals("test message", ((McpSchema.TextContent) result.content().get(0)).text());
     }
 
     @Test
     void testResponseMarshallingNull() {
         ResponseMarshaller marshaller = new ResponseMarshaller();
-        
-        CallToolResult result = marshaller.marshal(null);
-        
+
+        McpSchema.CallToolResult result = marshaller.marshal(null);
+
         assertFalse(result.isError());
-        assertEquals(0, result.getContent().size());
+        assertEquals(0, result.content().size());
     }
 
     @Test
@@ -89,15 +89,15 @@ class AdapterTest {
         
         Map<String, Object> args = new HashMap<>();
         args.put("message", "hello");
-        CallToolRequest request = new CallToolRequest(args);
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testTool", args);
         
-        McpAsyncServerExchange exchange = new McpAsyncServerExchange() {};
-        Mono<CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
-        
-        CallToolResult result = resultMono.block();
+        Object exchange = new Object();
+        Mono<McpSchema.CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
+
+        McpSchema.CallToolResult result = resultMono.block();
         assertNotNull(result);
         assertFalse(result.isError());
-        assertEquals("echo: hello", result.getContent().get(0).getText());
+        assertEquals("echo: hello", ((McpSchema.TextContent) result.content().get(0)).text());
     }
 
     @Test
@@ -120,15 +120,15 @@ class AdapterTest {
         
         Map<String, Object> args = new HashMap<>();
         args.put("message", "hello");
-        CallToolRequest request = new CallToolRequest(args);
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testTool", args);
         
-        McpAsyncServerExchange exchange = new McpAsyncServerExchange() {};
-        Mono<CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
-        
-        CallToolResult result = resultMono.block();
+        Object exchange = new Object();
+        Mono<McpSchema.CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
+
+        McpSchema.CallToolResult result = resultMono.block();
         assertNotNull(result);
         assertFalse(result.isError());
-        assertEquals("async: hello", result.getContent().get(0).getText());
+        assertEquals("async: hello", ((McpSchema.TextContent) result.content().get(0)).text());
     }
 
     @Test
@@ -153,14 +153,14 @@ class AdapterTest {
         // Missing required primitive argument should cause error
         Map<String, Object> args = new HashMap<>();
         args.put("a", 3);  // Missing 'b' parameter
-        CallToolRequest request = new CallToolRequest(args);
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testTool", args);
         
-        McpAsyncServerExchange exchange = new McpAsyncServerExchange() {};
-        Mono<CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
-        
-        CallToolResult result = resultMono.block();
+        Object exchange = new Object();
+        Mono<McpSchema.CallToolResult> resultMono = handler.asHandler().apply(exchange, request);
+
+        McpSchema.CallToolResult result = resultMono.block();
         assertNotNull(result);
         assertTrue(result.isError());
-        assertNotNull(result.getContent().get(0).getText());
+        assertNotNull(((McpSchema.TextContent) result.content().get(0)).text());
     }
 }

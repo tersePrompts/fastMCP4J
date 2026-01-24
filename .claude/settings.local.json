@@ -5,7 +5,11 @@
       "Bash(tree:*)",
       "Bash(git add .)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd project structure and chunk plans\n\n- Created Maven pom.xml with MCP SDK, Jackson, Lombok dependencies\n- Set up package structure for all 7 chunks\n- Added individual chunk plans in plans/ directory\n- Updated README with quick start and features\n- Added comprehensive .gitignore\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(git pull:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(mvn clean test:*)"
     ]
   }
 }

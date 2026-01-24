@@ -9,7 +9,7 @@ package io.github.fastmcp.adapter;
  * invocation, and response marshalling.
  *
  * Key behavior:
- * - Build a BiFunction<McpAsyncServerExchange, CallToolRequest, Mono<CallToolResult>>
+ * - Build a BiFunction<Object, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>>
  * - Bind method arguments via ArgumentBinder
  * - Invoke the method reflectively
  * - If the tool is marked as async, unwrap the Mono/Flux and marshal results
@@ -19,13 +19,12 @@ package io.github.fastmcp.adapter;
 import io.github.fastmcp.model.ToolMeta;
 import io.github.fastmcp.adapter.ArgumentBinder;
 import io.github.fastmcp.adapter.ResponseMarshaller;
+import io.modelcontextprotocol.spec.McpSchema;
 import reactor.core.publisher.Mono;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.lang.reflect.Method;
 import java.util.Map;
-
-import io.modelcontextprotocol.sdk.*; // MCP SDK common types, may be resolved by classpath
 
 // Minimal tool handler adapter, wraps annotated method as a Reactor-based handler
 public class ToolHandler {
@@ -41,7 +40,7 @@ public class ToolHandler {
         this.marshaller = marshaller;
     }
 
-    public BiFunction<McpAsyncServerExchange, CallToolRequest, Mono<CallToolResult>> asHandler() {
+    public BiFunction<Object, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>> asHandler() {
         return (exchange, request) -> {
             try {
                 Object[] args = binder.bind(meta.getMethod(), request.arguments());
@@ -58,9 +57,9 @@ public class ToolHandler {
         };
     }
 
-    private CallToolResult errorResult(Exception e) {
-        return CallToolResult.builder()
-            .content(List.of(new TextContent(e.getMessage())))
+    private McpSchema.CallToolResult errorResult(Exception e) {
+        return McpSchema.CallToolResult.builder()
+            .content(List.of(new McpSchema.TextContent(e.getMessage())))
             .isError(true)
             .build();
     }
