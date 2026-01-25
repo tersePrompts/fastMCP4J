@@ -53,7 +53,7 @@ public class EnhancedParameterServer {
     public String createUser(
         @McpParam(
             description = "User's full name",
-            examples = {"John Doe", "Jane Smith", "张三"},
+            examples = {"John Doe", "Jane Smith", "Zhang San"},
             constraints = "Must be 2-50 characters, no special characters except hyphen and space"
         )
         String name,

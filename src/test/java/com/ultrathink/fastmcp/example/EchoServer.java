@@ -18,6 +18,11 @@ import java.util.Map;
  * - Async operations (@McpAsync)
  */
 @McpServer(name = "echo", version = "2.0.0", instructions = "Comprehensive demo server with tools, resources, and prompts")
+@McpPlanner
+@McpMemory
+@McpTodo
+@McpFileWrite
+@McpFileRead
 public class EchoServer {
 
     // ============================================
@@ -92,7 +97,7 @@ public class EchoServer {
     public Map<String, Object> createUser(
         @McpParam(
             description = "User's full name",
-            examples = {"John Doe", "Jane Smith", "李明"},
+            examples = {"John Doe", "Jane Smith", "Li Ming"},
             constraints = "2-50 characters, letters, spaces, and hyphens only"
         )
         String name,
