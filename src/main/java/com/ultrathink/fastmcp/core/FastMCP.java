@@ -29,17 +29,42 @@ import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.*;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.servlet.*;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * FastMCP - Fluent Builder for MCP Servers
+ *
+ * Supports all MCP SDK transport types:
+ * - STDIO transport (for CLI tools)
+ * - HTTP SSE transport (Server-Sent Events)
+ * - HTTP Streamable transport (bidirectional streaming)
+ *
+ * Usage:
+ * <pre>
+ * FastMCP.server(MyServer.class)
+ *     .streamable()
+ *     .port(3000)
+ *     .requestTimeout(Duration.ofMinutes(5))
+ *     .keepAliveInterval(Duration.ofSeconds(30))
+ *     .capabilities(capabilities -> capabilities
+ *         .tools(true)
+ *         .resources(true, true))
+ *     .run();
+ * </pre>
+ */
 public final class FastMCP {
     private final Class<?> serverClass;
     private final AnnotationScanner scanner = new AnnotationScanner();
@@ -49,43 +74,215 @@ public final class FastMCP {
     /** ThreadLocal to store transport context (headers) for current request */
     private static final ThreadLocal<Map<String, String>> TRANSPORT_CONTEXT = new ThreadLocal<>();
 
+    // Transport configuration
     private TransportType transport = TransportType.STDIO;
     private int port = 8080;
     private String mcpUri = "/mcp";
+
+    // Timeout and keep-alive
+    private Duration requestTimeout = Duration.ofSeconds(120);
+    private Duration keepAliveInterval = Duration.ofSeconds(30);
+
+    // Server
     private Server jetty;
-    
+
+    // Custom stores
     private MemoryStore memoryStore;
     private TodoStore todoStore;
     private PlanStore planStore;
 
-    private FastMCP(Class<?> serverClass) { this.serverClass = serverClass; }
-    public static FastMCP server(Class<?> clazz) { return new FastMCP(clazz); }
+    // Server capabilities configuration
+    private Consumer<ServerCapabilitiesBuilder> capabilitiesConfigurer = caps -> {
+        caps.tools(true)
+           .resources(true, false)
+           .prompts(true)
+           .logging()
+           .completions();
+    };
 
-    // Fluent API
-    public FastMCP stdio() { this.transport = TransportType.STDIO; return this; }
-    public FastMCP sse() { this.transport = TransportType.HTTP_SSE; return this; }
-    public FastMCP streamable() { this.transport = TransportType.HTTP_STREAMABLE; return this; }
-    public FastMCP port(int p) { this.port = p; return this; }
-    public FastMCP mcpUri(String u) { this.mcpUri = u.startsWith("/") ? u : "/" + u; return this; }
-    
-    /**
-     * Set a custom MemoryStore implementation.
-     * Default is InMemoryMemoryStore.
-     */
-    public FastMCP memoryStore(MemoryStore store) { this.memoryStore = store; return this; }
-    
-    /**
-     * Set a custom TodoStore implementation.
-     * Default is InMemoryTodoStore.
-     */
-    public FastMCP todoStore(TodoStore store) { this.todoStore = store; return this; }
-    
-    /**
-     * Set a custom PlanStore implementation.
-     * Default is InMemoryPlanStore.
-     */
-    public FastMCP planStore(PlanStore store) { this.planStore = store; return this; }
+    // Instructions
+    private String instructions;
 
+    private FastMCP(Class<?> serverClass) {
+        this.serverClass = serverClass;
+    }
+
+    public static FastMCP server(Class<?> clazz) {
+        return new FastMCP(clazz);
+    }
+
+    // ========================================
+    // Transport Selection
+    // ========================================
+
+    /** STDIO transport (default, for CLI tools and local agents) */
+    public FastMCP stdio() {
+        this.transport = TransportType.STDIO;
+        return this;
+    }
+
+    /** HTTP SSE transport (Server-Sent Events, long-lived connections) */
+    public FastMCP sse() {
+        this.transport = TransportType.HTTP_SSE;
+        return this;
+    }
+
+    /** HTTP Streamable transport (bidirectional streaming, latest protocol) */
+    public FastMCP streamable() {
+        this.transport = TransportType.HTTP_STREAMABLE;
+        return this;
+    }
+
+    // ========================================
+    // Network Configuration
+    // ========================================
+
+    /** Set HTTP port (for SSE/Streamable transports, default: 8080) */
+    public FastMCP port(int p) {
+        this.port = p;
+        return this;
+    }
+
+    /** Set MCP endpoint URI (default: /mcp) */
+    public FastMCP mcpUri(String u) {
+        this.mcpUri = u.startsWith("/") ? u : "/" + u;
+        return this;
+    }
+
+    /** Set base URL for SSE transport (for constructing endpoint URLs) */
+    private String baseUrl = "";
+
+    public FastMCP baseUrl(String url) {
+        this.baseUrl = url;
+        return this;
+    }
+
+    // ========================================
+    // Timeout Configuration
+    // ========================================
+
+    /** Set request timeout (default: 120 seconds) */
+    public FastMCP requestTimeout(Duration timeout) {
+        this.requestTimeout = timeout;
+        return this;
+    }
+
+    /** Set request timeout in seconds */
+    public FastMCP requestTimeoutSeconds(long seconds) {
+        return requestTimeout(Duration.ofSeconds(seconds));
+    }
+
+    /** Set request timeout in minutes */
+    public FastMCP requestTimeoutMinutes(long minutes) {
+        return requestTimeout(Duration.ofMinutes(minutes));
+    }
+
+    // ========================================
+    // Keep-Alive Configuration
+    // ========================================
+
+    /** Set keep-alive interval for SSE/Streamable transports (default: 30 seconds) */
+    public FastMCP keepAliveInterval(Duration interval) {
+        this.keepAliveInterval = interval;
+        return this;
+    }
+
+    /** Set keep-alive interval in seconds */
+    public FastMCP keepAliveSeconds(long seconds) {
+        return keepAliveInterval(Duration.ofSeconds(seconds));
+    }
+
+    /** Disable keep-alive */
+    public FastMCP disableKeepAlive() {
+        this.keepAliveInterval = null;
+        return this;
+    }
+
+    // ========================================
+    // Server Capabilities Configuration
+    // ========================================
+
+    /**
+     * Configure server capabilities using a fluent builder.
+     *
+     * Usage:
+     * <pre>
+     * .capabilities(capabilities -> capabilities
+     *     .tools(true)                              // enable tools
+     *     .resources(true, true)                    // enable resources with subscribe
+     *     .prompts(true)                            // enable prompts
+     *     .logging()                                // enable logging
+     *     .completions()                            // enable completions
+     * )
+     * </pre>
+     */
+    public FastMCP capabilities(Consumer<ServerCapabilitiesBuilder> configurer) {
+        this.capabilitiesConfigurer = configurer;
+        return this;
+    }
+
+    /** Enable tools capability */
+    public FastMCP tools(boolean listChanged) {
+        return capabilities(c -> c.tools(listChanged));
+    }
+
+    /** Enable resources capability */
+    public FastMCP resources(boolean subscribe, boolean listChanged) {
+        return capabilities(c -> c.resources(subscribe, listChanged));
+    }
+
+    /** Enable prompts capability */
+    public FastMCP prompts(boolean listChanged) {
+        return capabilities(c -> c.prompts(listChanged));
+    }
+
+    /** Enable logging capability */
+    public FastMCP logging() {
+        return capabilities(c -> c.logging());
+    }
+
+    /** Enable completions capability */
+    public FastMCP completions() {
+        return capabilities(c -> c.completions());
+    }
+
+    // ========================================
+    // Custom Stores
+    // ========================================
+
+    /** Set a custom MemoryStore implementation (default: InMemoryMemoryStore) */
+    public FastMCP memoryStore(MemoryStore store) {
+        this.memoryStore = store;
+        return this;
+    }
+
+    /** Set a custom TodoStore implementation (default: InMemoryTodoStore) */
+    public FastMCP todoStore(TodoStore store) {
+        this.todoStore = store;
+        return this;
+    }
+
+    /** Set a custom PlanStore implementation (default: InMemoryPlanStore) */
+    public FastMCP planStore(PlanStore store) {
+        this.planStore = store;
+        return this;
+    }
+
+    // ========================================
+    // Instructions
+    // ========================================
+
+    /** Set server instructions (overrides @McpServer instructions) */
+    public FastMCP instructions(String instructions) {
+        this.instructions = instructions;
+        return this;
+    }
+
+    // ========================================
+    // Lifecycle
+    // ========================================
+
+    /** Build and run the MCP server (blocking) */
     public void run() {
         try {
             McpAsyncServer mcp = build();
@@ -99,122 +296,223 @@ public final class FastMCP {
             } else {
                 Thread.currentThread().join();
             }
-        } catch (Exception e) { throw new RuntimeException("FastMCP Startup Failed", e); }
+        } catch (Exception e) {
+            throw new RuntimeException("FastMCP Startup Failed", e);
+        }
     }
 
-    private McpAsyncServer build() throws Exception {
-        Object instance = serverClass.getDeclaredConstructor().newInstance();
-        ServerMeta meta = scanner.scan(serverClass);
-        serverName = meta.getName(); // Set server name for context
+    /** Build the MCP server without running (for advanced use cases) */
+    public McpAsyncServer build() {
+        try {
+            Object instance = serverClass.getDeclaredConstructor().newInstance();
+            ServerMeta meta = scanner.scan(serverClass);
+            serverName = meta.getName();
 
-        // Create HookManager for pre/post hooks
-        HookManager hookManager = new HookManager(instance, meta.getTools());
+            HookManager hookManager = new HookManager(instance, meta.getTools());
+            var mapper = new JacksonMcpJsonMapper(new ObjectMapper());
 
-        var mapper = new JacksonMcpJsonMapper(new ObjectMapper());
+            Object builder = createBuilder(mapper);
+            configureServerInfo(builder, meta);
+            configureCapabilities(builder);
 
-        io.modelcontextprotocol.server.McpServer.AsyncSpecification<?> builder = switch (transport) {
+            registerTools(builder, meta, instance, hookManager);
+            registerResources(builder, meta, instance);
+            registerPrompts(builder, meta, instance);
+            registerBuiltinTools(builder);
+
+            return (McpAsyncServer) ((Function<?, ?>) builder).apply(null);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to build MCP server", e);
+        }
+    }
+
+    // ========================================
+    // Internal Builder Methods
+    // ========================================
+
+    private Object createBuilder(JacksonMcpJsonMapper mapper) throws Exception {
+        return switch (transport) {
             case STDIO -> io.modelcontextprotocol.server.McpServer.async(new StdioServerTransportProvider(mapper));
 
             case HTTP_SSE -> {
-                var p = HttpServletSseServerTransportProvider.builder()
-                        .jsonMapper(mapper).messageEndpoint(mcpUri)
-                        //here the endpoint is - /mcp/sse
-                        .contextExtractor(FastMCP::extractContext).build();
-                startJetty(p);
-                yield io.modelcontextprotocol.server.McpServer.async(p);
+                HttpServletSseServerTransportProvider.Builder builder = HttpServletSseServerTransportProvider.builder()
+                        .jsonMapper(mapper)
+                        .messageEndpoint(mcpUri)
+                        .contextExtractor(FastMCP::extractContext);
+
+                if (!baseUrl.isEmpty()) {
+                    builder.baseUrl(baseUrl);
+                }
+                if (keepAliveInterval != null) {
+                    builder.keepAliveInterval(keepAliveInterval);
+                }
+
+                HttpServletSseServerTransportProvider provider = builder.build();
+                startJetty(provider);
+                yield io.modelcontextprotocol.server.McpServer.async(provider);
             }
 
             case HTTP_STREAMABLE -> {
-                var p = HttpServletStreamableServerTransportProvider.builder()
+                HttpServletStreamableServerTransportProvider.Builder builder = HttpServletStreamableServerTransportProvider.builder()
                         .jsonMapper(mapper)
-                        .contextExtractor(FastMCP::extractContext)
-                        .keepAliveInterval(Duration.ofSeconds(30))
-                        .build();
-                startJetty(p);
-                yield io.modelcontextprotocol.server.McpServer.async(p);
+                        .mcpEndpoint(mcpUri)
+                        .contextExtractor(FastMCP::extractContext);
+
+                if (keepAliveInterval != null) {
+                    builder.keepAliveInterval(keepAliveInterval);
+                }
+
+                HttpServletStreamableServerTransportProvider provider = builder.build();
+                startJetty(provider);
+                yield io.modelcontextprotocol.server.McpServer.async(provider);
             }
         };
+    }
 
-        builder.serverInfo(meta.getName(), meta.getVersion())
-                .capabilities(McpSchema.ServerCapabilities.builder()
-                    .tools(true)
-                    .resources(true, false)  // resources enabled, no list changes
-                    .prompts(true)           // prompts enabled
-                    .logging()
-                    .completions()
-                    .build());
-
-        meta.getTools().forEach(t -> builder.tools(buildTool(t, instance, hookManager)));
-        meta.getResources().forEach(r -> builder.resources(buildResource(r, instance)));
-        meta.getPrompts().forEach(p -> builder.prompts(buildPrompt(p, instance)));
-
-        // Register memory tool if @McpMemory annotation is present
-        if (serverClass.isAnnotationPresent(McpMemory.class)) {
-            MemoryStore store = memoryStore != null ? memoryStore : new InMemoryMemoryStore();
-            MemoryTool memoryTool = new MemoryTool(store);
-            String toolSchema = memoryTool.getToolSchema();
-            Map<String, Object> schemaMap = (Map<String, Object>) parseJsonSchema(toolSchema);
-
-            var tool = McpSchema.Tool.builder()
-                    .name("memory")
-                    .description("Memory tool for persistent storage and retrieval of information")
-                    .inputSchema(new McpSchema.JsonSchema(
-                        (String) schemaMap.getOrDefault("type", "object"),
-                        (Map<String, Object>) schemaMap.getOrDefault("properties", Map.of()),
-                        (List<String>) schemaMap.getOrDefault("required", List.of()),
-                        null, null, null))
-                    .build();
-            builder.tools(
-                new McpServerFeatures.AsyncToolSpecification(
-                    tool,
-                    null,
-                    (exchange, args) -> memoryTool.handleToolCall(exchange, (java.util.Map<String, Object>) args.arguments())
-                )
-            );
+    private void configureServerInfo(Object builder, ServerMeta meta) {
+        try {
+            var method = builder.getClass().getMethod("serverInfo", String.class, String.class);
+            method.invoke(builder, meta.getName(), meta.getVersion());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to configure server info", e);
         }
+    }
 
-        // Register todo tools if @McpTodo annotation is present
-        if (serverClass.isAnnotationPresent(McpTodo.class)) {
-            TodoStore todoStoreInstance = todoStore != null ? todoStore : new InMemoryTodoStore();
-            TodoTool todoTool = new TodoTool(todoStoreInstance);
-            List<ToolMeta> todoTools = scanner.scanToolsOnly(TodoTool.class);
-            todoTools.forEach(t -> builder.tools(buildTool(t, todoTool, null)));
+    private void configureCapabilities(Object builder) {
+        ServerCapabilitiesBuilder capsBuilder = new ServerCapabilitiesBuilder();
+        capabilitiesConfigurer.accept(capsBuilder);
+
+        try {
+            var capabilitiesMethod = builder.getClass().getMethod("capabilities", McpSchema.ServerCapabilities.class);
+            capabilitiesMethod.invoke(builder, capsBuilder.build());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to configure capabilities", e);
         }
+    }
 
-        // Register planner tools if @McpPlanner annotation is present
-        if (serverClass.isAnnotationPresent(McpPlanner.class)) {
-            PlanStore planStoreInstance = planStore != null ? planStore : new InMemoryPlanStore();
-            PlannerTool plannerTool = new PlannerTool(planStoreInstance);
-            List<ToolMeta> plannerTools = scanner.scanToolsOnly(PlannerTool.class);
-            plannerTools.forEach(t -> builder.tools(buildTool(t, plannerTool, null)));
+    private void registerTools(Object builder, ServerMeta meta, Object instance, HookManager hookManager) {
+        ServerCapabilitiesBuilder caps = new ServerCapabilitiesBuilder();
+        capabilitiesConfigurer.accept(caps);
+        if (!caps.hasTools()) return;
+
+        try {
+            var toolsMethod = builder.getClass().getMethod("tools", McpServerFeatures.AsyncToolSpecification.class);
+            for (var tool : meta.getTools()) {
+                var spec = buildTool(tool, instance, hookManager);
+                toolsMethod.invoke(builder, spec);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to register tools", e);
         }
+    }
 
-        // Register file read tools if @McpFileRead annotation is present
-        if (serverClass.isAnnotationPresent(McpFileRead.class)) {
-            FileReadTool fileReadTool = new FileReadTool();
-            List<ToolMeta> fileReadTools = scanner.scanToolsOnly(FileReadTool.class);
-            fileReadTools.forEach(t -> builder.tools(buildTool(t, fileReadTool, null)));
+    private void registerResources(Object builder, ServerMeta meta, Object instance) {
+        ServerCapabilitiesBuilder caps = new ServerCapabilitiesBuilder();
+        capabilitiesConfigurer.accept(caps);
+        if (!caps.hasResources()) return;
+
+        try {
+            var resourcesMethod = builder.getClass().getMethod("resources", McpServerFeatures.AsyncResourceSpecification.class);
+            for (var resource : meta.getResources()) {
+                var spec = buildResource(resource, instance);
+                resourcesMethod.invoke(builder, spec);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to register resources", e);
         }
+    }
 
-        // Register file write tools if @McpFileWrite annotation is present
-        if (serverClass.isAnnotationPresent(McpFileWrite.class)) {
-            FileWriteTool fileWriteTool = new FileWriteTool();
-            List<ToolMeta> fileWriteTools = scanner.scanToolsOnly(FileWriteTool.class);
-            fileWriteTools.forEach(t -> builder.tools(buildTool(t, fileWriteTool, null)));
+    private void registerPrompts(Object builder, ServerMeta meta, Object instance) {
+        ServerCapabilitiesBuilder caps = new ServerCapabilitiesBuilder();
+        capabilitiesConfigurer.accept(caps);
+        if (!caps.hasPrompts()) return;
+
+        try {
+            var promptsMethod = builder.getClass().getMethod("prompts", McpServerFeatures.AsyncPromptSpecification.class);
+            for (var prompt : meta.getPrompts()) {
+                var spec = buildPrompt(prompt, instance);
+                promptsMethod.invoke(builder, spec);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to register prompts", e);
         }
+    }
 
-        return builder.build();
+    private void registerBuiltinTools(Object builder) {
+        try {
+            var toolsMethod = builder.getClass().getMethod("tools", McpServerFeatures.AsyncToolSpecification.class);
+
+            // Memory tool
+            if (serverClass.isAnnotationPresent(McpMemory.class)) {
+                MemoryStore store = memoryStore != null ? memoryStore : new InMemoryMemoryStore();
+                MemoryTool memoryTool = new MemoryTool(store);
+                var spec = buildBuiltinTool(memoryTool, "memory",
+                    "Memory tool for persistent storage and retrieval of information");
+                toolsMethod.invoke(builder, spec);
+            }
+
+            // Todo tools
+            if (serverClass.isAnnotationPresent(McpTodo.class)) {
+                TodoStore store = todoStore != null ? todoStore : new InMemoryTodoStore();
+                TodoTool todoTool = new TodoTool(store);
+                List<ToolMeta> todoTools = scanner.scanToolsOnly(TodoTool.class);
+                for (var t : todoTools) {
+                    var spec = buildTool(t, todoTool, null);
+                    toolsMethod.invoke(builder, spec);
+                }
+            }
+
+            // Planner tools
+            if (serverClass.isAnnotationPresent(McpPlanner.class)) {
+                PlanStore store = planStore != null ? planStore : new InMemoryPlanStore();
+                PlannerTool plannerTool = new PlannerTool(store);
+                List<ToolMeta> plannerTools = scanner.scanToolsOnly(PlannerTool.class);
+                for (var t : plannerTools) {
+                    var spec = buildTool(t, plannerTool, null);
+                    toolsMethod.invoke(builder, spec);
+                }
+            }
+
+            // File read tools
+            if (serverClass.isAnnotationPresent(McpFileRead.class)) {
+                FileReadTool fileReadTool = new FileReadTool();
+                List<ToolMeta> fileReadTools = scanner.scanToolsOnly(FileReadTool.class);
+                for (var t : fileReadTools) {
+                    var spec = buildTool(t, fileReadTool, null);
+                    toolsMethod.invoke(builder, spec);
+                }
+            }
+
+            // File write tools
+            if (serverClass.isAnnotationPresent(McpFileWrite.class)) {
+                FileWriteTool fileWriteTool = new FileWriteTool();
+                List<ToolMeta> fileWriteTools = scanner.scanToolsOnly(FileWriteTool.class);
+                for (var t : fileWriteTools) {
+                    var spec = buildTool(t, fileWriteTool, null);
+                    toolsMethod.invoke(builder, spec);
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to register builtin tools", e);
+        }
     }
 
     private void startJetty(HttpServlet servlet) throws Exception {
         jetty = new Server(port);
         ServletContextHandler ctx = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
-        // CRITICAL: SSE requires async support to keep the connection open
         ServletHolder holder = new ServletHolder(servlet);
         holder.setAsyncSupported(true);
         ctx.addServlet(holder, mcpUri + "/*");
         jetty.setHandler(ctx);
         jetty.start();
+    }
+
+    private void startJetty(HttpServletSseServerTransportProvider provider) throws Exception {
+        startJetty((HttpServlet) provider);
+    }
+
+    private void startJetty(HttpServletStreamableServerTransportProvider provider) throws Exception {
+        startJetty((HttpServlet) provider);
     }
 
     @SuppressWarnings("unchecked")
@@ -230,7 +528,8 @@ public final class FastMCP {
                         null, null, null))
                 .build();
 
-        var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(), new ResponseMarshaller(), serverName, hookManager);
+        var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(),
+            new ResponseMarshaller(), serverName, hookManager);
         return new McpServerFeatures.AsyncToolSpecification(tool, null, handler.asHandler());
     }
 
@@ -250,7 +549,6 @@ public final class FastMCP {
     private McpServerFeatures.AsyncPromptSpecification buildPrompt(PromptMeta promptMeta, Object instance) {
         Map<String, Object> s = schemaGenerator.generate(promptMeta.getMethod());
 
-        // Build prompt arguments from schema
         List<McpSchema.PromptArgument> arguments = new ArrayList<>();
         if (s.containsKey("properties")) {
             Map<String, Object> properties = (Map<String, Object>) s.get("properties");
@@ -276,10 +574,46 @@ public final class FastMCP {
         return new McpServerFeatures.AsyncPromptSpecification(prompt, handler.asHandler());
     }
 
+    @SuppressWarnings("unchecked")
+    private McpServerFeatures.AsyncToolSpecification buildBuiltinTool(
+            Object toolInstance, String name, String description) {
+        try {
+            var method = toolInstance.getClass().getMethod("getToolSchema");
+            String toolSchema = (String) method.invoke(toolInstance);
+            Map<String, Object> schemaMap = (Map<String, Object>) parseJsonSchema(toolSchema);
+
+            var tool = McpSchema.Tool.builder()
+                    .name(name)
+                    .description(description)
+                    .inputSchema(new McpSchema.JsonSchema(
+                        (String) schemaMap.getOrDefault("type", "object"),
+                        (Map<String, Object>) schemaMap.getOrDefault("properties", Map.of()),
+                        (List<String>) schemaMap.getOrDefault("required", List.of()),
+                        null, null, null))
+                    .build();
+
+            return new McpServerFeatures.AsyncToolSpecification(
+                tool,
+                null,
+                (McpAsyncServerExchange exchange, McpSchema.CallToolRequest args) -> {
+                    try {
+                        var handleMethod = toolInstance.getClass().getMethod(
+                            "handleToolCall", McpAsyncServerExchange.class, Map.class);
+                        return (Mono<McpSchema.CallToolResult>) handleMethod.invoke(
+                            toolInstance, exchange, args.arguments());
+                    } catch (Exception e) {
+                        return Mono.error(e);
+                    }
+                }
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to build builtin tool: " + name, e);
+        }
+    }
+
     private static McpTransportContext extractContext(HttpServletRequest req) {
         Map<String, String> headers = Collections.list(req.getHeaderNames()).stream()
                 .collect(Collectors.toMap(Function.identity(), req::getHeader, (a, b) -> a));
-        // Store in ThreadLocal for access in ToolHandler
         TRANSPORT_CONTEXT.set(headers);
         @SuppressWarnings("unchecked")
         Map<String, Object> headersAsObject = (Map<String, Object>) (Map<?, ?>) headers;
@@ -302,6 +636,117 @@ public final class FastMCP {
             return new ObjectMapper().readValue(schema, Map.class);
         } catch (Exception e) {
             return Map.of();
+        }
+    }
+
+    // ========================================
+    // Transport Types
+    // ========================================
+
+    private enum TransportType {
+        STDIO,
+        HTTP_SSE,
+        HTTP_STREAMABLE
+    }
+
+    // ========================================
+    // Server Capabilities Builder
+    // ========================================
+
+    /**
+     * Fluent builder for MCP ServerCapabilities.
+     */
+    public static class ServerCapabilitiesBuilder {
+        private boolean toolsEnabled = true;
+        private boolean toolsListChanged = false;
+        private boolean resourcesEnabled = false;
+        private boolean resourcesSubscribe = false;
+        private boolean resourcesListChanged = false;
+        private boolean promptsEnabled = false;
+        private boolean promptsListChanged = false;
+        private boolean loggingEnabled = false;
+        private boolean completionsEnabled = false;
+
+        public ServerCapabilitiesBuilder tools(boolean listChanged) {
+            this.toolsEnabled = true;
+            this.toolsListChanged = listChanged;
+            return this;
+        }
+
+        public ServerCapabilitiesBuilder noTools() {
+            this.toolsEnabled = false;
+            return this;
+        }
+
+        public ServerCapabilitiesBuilder resources(boolean subscribe, boolean listChanged) {
+            this.resourcesEnabled = true;
+            this.resourcesSubscribe = subscribe;
+            this.resourcesListChanged = listChanged;
+            return this;
+        }
+
+        public ServerCapabilitiesBuilder noResources() {
+            this.resourcesEnabled = false;
+            return this;
+        }
+
+        public ServerCapabilitiesBuilder prompts(boolean listChanged) {
+            this.promptsEnabled = true;
+            this.promptsListChanged = listChanged;
+            return this;
+        }
+
+        public ServerCapabilitiesBuilder noPrompts() {
+            this.promptsEnabled = false;
+            return this;
+        }
+
+        public ServerCapabilitiesBuilder logging() {
+            this.loggingEnabled = true;
+            return this;
+        }
+
+        public ServerCapabilitiesBuilder completions() {
+            this.completionsEnabled = true;
+            return this;
+        }
+
+        public boolean hasTools() {
+            return toolsEnabled;
+        }
+
+        public boolean hasResources() {
+            return resourcesEnabled;
+        }
+
+        public boolean hasPrompts() {
+            return promptsEnabled;
+        }
+
+        public McpSchema.ServerCapabilities build() {
+            McpSchema.ServerCapabilities.Builder builder = McpSchema.ServerCapabilities.builder();
+
+            if (toolsEnabled) {
+                builder.tools(toolsListChanged);
+            }
+
+            if (resourcesEnabled) {
+                builder.resources(resourcesSubscribe, resourcesListChanged);
+            }
+
+            if (promptsEnabled) {
+                builder.prompts(promptsListChanged);
+            }
+
+            if (loggingEnabled) {
+                builder.logging();
+            }
+
+            if (completionsEnabled) {
+                builder.completions();
+            }
+
+            return builder.build();
         }
     }
 }
