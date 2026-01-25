@@ -138,24 +138,36 @@ public class SchemaGenerator {
         McpParam ann = param.getAnnotation(McpParam.class);
         if (ann == null) return;
 
-        // Add detailed description
+        // Build enhanced description with examples, constraints, and hints
+        StringBuilder description = new StringBuilder();
+
+        // Main description
         if (!ann.description().isEmpty()) {
-            schema.put("description", ann.description());
+            description.append(ann.description());
         }
 
-        // Add examples
+        // Examples
         if (ann.examples().length > 0) {
             schema.put("examples", Arrays.asList(ann.examples()));
+            description.append("\n\nExamples: ");
+            description.append(String.join(", ", ann.examples()));
         }
 
-        // Add constraints
+        // Constraints
         if (!ann.constraints().isEmpty()) {
             schema.put("constraints", ann.constraints());
+            description.append("\n\nConstraints: ").append(ann.constraints());
         }
 
-        // Add hints for LLM
+        // Hints for LLM
         if (!ann.hints().isEmpty()) {
             schema.put("hints", ann.hints());
+            description.append("\n\nHints: ").append(ann.hints());
+        }
+
+        // Set the enhanced description (includes examples, constraints, hints for LLM visibility)
+        if (description.length() > 0) {
+            schema.put("description", description.toString());
         }
 
         // Add default value if provided

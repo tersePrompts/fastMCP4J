@@ -5,6 +5,7 @@ import com.ultrathink.fastmcp.annotations.McpTool;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -138,7 +139,7 @@ public class PlannerTool {
 
         @McpParam(
             description = """
-                [createPlan mode] Initial root-level tasks as a list of JSON objects.
+                [createPlan mode] Initial root-level tasks as a list of task objects.
                 Each task must have 'title', and may include 'description', 'execution_type' ('sequential' or 'parallel'), and 'dependencies' (array of task IDs).
 
                 Example: [{"title": "Setup database", "description": "Configure PostgreSQL"}, {"title": "Build API", "execution_type": "parallel"}]
@@ -148,11 +149,11 @@ public class PlannerTool {
                 "[{\"title\": \"Design schema\", \"description\": \"Plan database tables\"}, {\"title\": \"Implement models\", \"description\": \"Create data models\", \"execution_type\": \"sequential\"}]",
                 "[{\"title\": \"Setup frontend\", \"execution_type\": \"parallel\"}, {\"title\": \"Setup backend\", \"execution_type\": \"parallel\"}]"
             },
-            constraints = "Must be valid JSON array. Each task must have at least a 'title' field",
+            constraints = "Must be an array of task objects. Each task must have at least a 'title' field",
             hints = "Start with 3-7 major tasks. You can always add more tasks later with addTask mode. Break down complex tasks into subtasks later using addSubtask mode",
             required = false
         )
-        List<String> initialTasks,
+        List<Map<String, Object>> initialTasks,
 
         // addTask mode parameters
         @McpParam(
@@ -285,15 +286,15 @@ public class PlannerTool {
     /**
      * Handle createPlan mode - creates a new execution plan.
      */
-    private String handleCreatePlan(String name, String description, List<String> initialTasks) {
+    private String handleCreatePlan(String name, String description, List<Map<String, Object>> initialTasks) {
         if (name == null || name.isBlank()) {
             throw new PlannerException("Plan name is required for createPlan mode. Provide planName parameter.");
         }
 
         List<PlanStore.Task> tasks = new ArrayList<>();
         if (initialTasks != null) {
-            for (String taskJson : initialTasks) {
-                PlanStore.Task task = parseTaskFromJson(taskJson);
+            for (Map<String, Object> taskMap : initialTasks) {
+                PlanStore.Task task = parseTaskFromMap(taskMap);
                 tasks.add(task);
             }
         }
@@ -582,38 +583,36 @@ public class PlannerTool {
                 : "");
     }
 
-    private PlanStore.Task parseTaskFromJson(String json) {
+    private PlanStore.Task parseTaskFromMap(Map<String, Object> taskMap) {
         try {
-            // Simple JSON parser for task objects
-            // Extract title
-            String title = extractJsonField(json, "title");
-            if (title == null || title.isBlank()) {
-                throw new PlannerException("Task JSON must contain a 'title' field: " + json);
+            // Extract title (required)
+            Object titleObj = taskMap.get("title");
+            if (titleObj == null) {
+                throw new PlannerException("Task object must contain a 'title' field");
+            }
+            String title = titleObj.toString();
+            if (title.isBlank()) {
+                throw new PlannerException("Task 'title' cannot be empty");
             }
 
             // Extract description (optional)
-            String description = extractJsonField(json, "description");
-            if (description == null) {
-                description = "";
-            }
+            Object descObj = taskMap.get("description");
+            String description = descObj != null ? descObj.toString() : "";
 
             // Extract execution_type (optional)
-            String execTypeStr = extractJsonField(json, "execution_type");
+            Object execTypeObj = taskMap.get("execution_type");
             PlanStore.TaskExecutionType execType = PlanStore.TaskExecutionType.SEQUENTIAL;
-            if (execTypeStr != null) {
-                execType = parseExecutionType(execTypeStr);
+            if (execTypeObj != null) {
+                execType = parseExecutionType(execTypeObj.toString());
             }
 
             // Extract dependencies (optional)
             List<String> dependencies = new ArrayList<>();
-            String depsStr = extractJsonField(json, "dependencies");
-            if (depsStr != null && depsStr.startsWith("[") && depsStr.endsWith("]")) {
-                // Parse array: ["id1", "id2"]
-                String[] deps = depsStr.substring(1, depsStr.length() - 1).split(",");
-                for (String dep : deps) {
-                    String trimmed = dep.trim().replaceAll("^\"|\"$", "");
-                    if (!trimmed.isEmpty()) {
-                        dependencies.add(trimmed);
+            Object depsObj = taskMap.get("dependencies");
+            if (depsObj instanceof List<?> depsList) {
+                for (Object dep : depsList) {
+                    if (dep != null) {
+                        dependencies.add(dep.toString());
                     }
                 }
             }
@@ -630,29 +629,7 @@ public class PlannerTool {
                 java.time.Instant.now()
             );
         } catch (Exception e) {
-            throw new PlannerException("Invalid task JSON: " + json + ". Error: " + e.getMessage(), e);
+            throw new PlannerException("Invalid task object: " + taskMap + ". Error: " + e.getMessage(), e);
         }
-    }
-
-    /**
-     * Extract a field value from JSON string.
-     * Simple regex-based extraction for basic JSON objects.
-     */
-    private String extractJsonField(String json, String fieldName) {
-        // Pattern: "fieldName": "value" or "fieldName": "value",
-        // Or for arrays: "fieldName": ["value1", "value2"]
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-            "\"" + fieldName + "\"\\s*:\\s*(\\[[^\\]]*\\]|\"[^\"]*\"|[^,}]+)"
-        );
-        java.util.regex.Matcher matcher = pattern.matcher(json);
-        if (matcher.find()) {
-            String value = matcher.group(1).trim();
-            // Remove quotes if present
-            if (value.startsWith("\"") && value.endsWith("\"")) {
-                value = value.substring(1, value.length() - 1);
-            }
-            return value;
-        }
-        return null;
     }
 }

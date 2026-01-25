@@ -2,6 +2,7 @@ package com.ultrathink.fastmcp.example;
 
 import com.ultrathink.fastmcp.annotations.*;
 import com.ultrathink.fastmcp.core.FastMCP;
+import lombok.Getter;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -22,7 +23,7 @@ import java.util.Map;
  * - @McpPlanner: Planner tool
  * - @McpFileRead: File reading tools
  * - @McpFileWrite: File writing tools
- *
+ * <p>
  * FEATURES:
  * - Enhanced parameter descriptions (@McpParam)
  * - Icons support (server, tools, resources, prompts)
@@ -47,6 +48,35 @@ import java.util.Map;
 @McpFileRead    // Enables: read_lines, grep, file_stats tools
 @McpFileWrite   // Enables: write_file, append_file, delete_file, create_directory tools
 public class EchoServer {
+
+    /**
+     * Arithmetic operation types.
+     */
+    @Getter
+    public enum Operation {
+        ADD("add", "Addition (+)"),
+        SUBTRACT("subtract", "Subtraction (-)"),
+        MULTIPLY("multiply", "Multiplication (*)"),
+        DIVIDE("divide", "Division (/)");
+
+        private final String value;
+        private final String description;
+
+        Operation(String value, String description) {
+            this.value = value;
+            this.description = description;
+        }
+
+        public static Operation fromString(String value) {
+            for (Operation op : Operation.values()) {
+                if (op.value.equalsIgnoreCase(value)) {
+                    return op;
+                }
+            }
+            throw new IllegalArgumentException("Invalid operation: " + value + ". Must be one of: add, subtract, multiply, divide");
+        }
+    }
+
 
     // ============================================
     // PRE/POST HOOKS - Logging & Monitoring
@@ -100,9 +130,10 @@ public class EchoServer {
             description = "Operation to perform",
             examples = {"add", "subtract", "multiply", "divide"},
             constraints = "Must be one of: add, subtract, multiply, divide",
+            hints = "Choose the arithmetic operation to perform on the two numbers",
             required = true
         )
-        String operation,
+        Operation operation,
 
         @McpParam(
             description = "Second number",
@@ -111,12 +142,11 @@ public class EchoServer {
         )
         double b
     ) {
-        return switch (operation.toLowerCase()) {
-            case "add" -> a + b;
-            case "subtract" -> a - b;
-            case "multiply" -> a * b;
-            case "divide" -> a / b;
-            default -> throw new IllegalArgumentException("Invalid operation: " + operation);
+        return switch (operation) {
+            case ADD -> a + b;
+            case SUBTRACT -> a - b;
+            case MULTIPLY -> a * b;
+            case DIVIDE -> a / b;
         };
     }
 

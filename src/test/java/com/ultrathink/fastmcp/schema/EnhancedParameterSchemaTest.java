@@ -30,21 +30,28 @@ public class EnhancedParameterSchemaTest {
         // Test directory parameter
         Map<String, Object> directoryParam = (Map<String, Object>) properties.get("directory");
         assertNotNull(directoryParam);
-        assertEquals("Directory path to search in. Should be absolute path or relative to project root.", 
-                     directoryParam.get("description"));
+        String dirDesc = (String) directoryParam.get("description");
+        assertTrue(dirDesc.contains("Directory path to search in"));
+        assertTrue(dirDesc.contains("Examples:"));
+        assertTrue(dirDesc.contains("Constraints: Must be a valid directory path"));
+        assertTrue(dirDesc.contains("Hints: Use '.' for current directory"));
+
         assertEquals("Must be a valid directory path", directoryParam.get("constraints"));
         assertEquals("Use '.' for current directory, '..' for parent directory", directoryParam.get("hints"));
-        
+
         @SuppressWarnings("unchecked")
         java.util.List<String> examples = (java.util.List<String>) directoryParam.get("examples");
         assertTrue(examples.contains("/home/user/documents"));
         assertTrue(examples.contains("./src/main/java"));
         assertTrue(examples.contains("C:\\Users\\User\\Projects"));
-        
+
         // Test pattern parameter
         Map<String, Object> patternParam = (Map<String, Object>) properties.get("pattern");
-        assertEquals("File pattern to match. Supports wildcards like *.java, **/*.txt", 
-                     patternParam.get("description"));
+        String patternDesc = (String) patternParam.get("description");
+        assertTrue(patternDesc.contains("File pattern to match"));
+        assertTrue(patternDesc.contains("Constraints: Must be a valid file pattern"));
+        assertTrue(patternDesc.contains("Hints: Use ** for recursive search"));
+
         assertEquals("Must be a valid file pattern", patternParam.get("constraints"));
         assertEquals("Use ** for recursive search, * for single-level match", patternParam.get("hints"));
         
@@ -77,7 +84,10 @@ public class EnhancedParameterSchemaTest {
         Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
         
         Map<String, Object> emailParam = (Map<String, Object>) properties.get("email");
-        assertEquals("User's email address", emailParam.get("description"));
+        String emailDesc = (String) emailParam.get("description");
+        assertTrue(emailDesc.contains("User's email address"));
+        assertTrue(emailDesc.contains("Constraints: Must be valid email format"));
+        assertTrue(emailDesc.contains("Hints: This will be username for login."));
         assertEquals("Must be valid email format", emailParam.get("constraints"));
         assertEquals("This will be username for login.", emailParam.get("hints"));
         
@@ -103,7 +113,10 @@ public class EnhancedParameterSchemaTest {
         Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
         
         Map<String, Object> operationParam = (Map<String, Object>) properties.get("operation");
-        assertEquals("Arithmetic operation to perform", operationParam.get("description"));
+        String opDesc = (String) operationParam.get("description");
+        assertTrue(opDesc.contains("Arithmetic operation to perform"));
+        assertTrue(opDesc.contains("Examples:"));
+        assertTrue(opDesc.contains("Hints: Use 'add' for addition"));
         assertEquals("Use 'add' for addition, 'subtract' for subtraction, etc.", operationParam.get("hints"));
         assertTrue(operationParam.containsKey("examples"));
     }
