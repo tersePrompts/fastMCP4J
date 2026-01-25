@@ -139,6 +139,12 @@ public interface Context {
      * @return Server name
      */
     String getServerName();
+
+    /**
+     * Get HTTP headers from the request (for HTTP transports).
+     * @return Map of header names to values, or empty map if not available
+     */
+    Map<String, String> getHeaders();
     
     /**
      * Resource metadata information.

@@ -1,0 +1,13 @@
+{
+  "name": "fastmcp4j-jarp-mcp",
+  "version": "1.0.0",
+  "description": "jarp-mcp server for fastMCP4J JAR decompilation support",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "jarp-mcp start"
+  },
+  "dependencies": {
+    "jarp-mcp": "^1.0.1"
+  }
+}

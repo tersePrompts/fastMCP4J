@@ -35,7 +35,8 @@
       "Bash(java:*)",
       "Bash(mvn -Dtest=SchemaGeneratorTest test:*)",
       "Bash(findstr:*)",
-      "Bash(mvn:*)"
+      "Bash(mvn:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

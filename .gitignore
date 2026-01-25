@@ -34,3 +34,10 @@ Thumbs.db
 *.war
 *.ear
 
+# Node.js / MCP
+mcp-servers/*/node_modules/
+# JARP-MCP cache
+.mcp-class-index.json
+.mcp-decompile-cache/
+.mcp-class-temp/
+

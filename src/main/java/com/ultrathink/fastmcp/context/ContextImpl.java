@@ -139,6 +139,17 @@ public class ContextImpl implements Context {
     public String getServerName() {
         return serverName;
     }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Map<String, String> getHeaders() {
+        // Headers are stored in meta under "headers" key
+        Object headers = exchange.getMeta().get("headers");
+        if (headers instanceof Map) {
+            return new HashMap<>((Map<String, String>) headers);
+        }
+        return Map.of();
+    }
     
     /**
      * Simple request context representation.

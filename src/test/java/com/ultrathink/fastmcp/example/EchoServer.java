@@ -1,6 +1,7 @@
 package com.ultrathink.fastmcp.example;
 
 import com.ultrathink.fastmcp.annotations.*;
+import com.ultrathink.fastmcp.context.Context;
 import com.ultrathink.fastmcp.core.FastMCP;
 import lombok.Getter;
 
@@ -98,7 +99,7 @@ public class EchoServer {
     // ============================================
 
     @McpTool(
-        description = "Echo back the message with timestamp",
+        description = "Echo back the message with timestamp and request headers",
         icons = {"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzg5REZGMyIvPgo8cGF0aCBkPSJNMTYgOEMxMi42ODY2IDggMTAgMTAuNjg2NiAxMCAxNEMxMCAxNy4zMTM0IDEyLjY4NjYgMjAgMTYgMjBDMTkuMzEzNCAyMCAyMiAxNy4zMTM0IDIyIDE0QzIyIDEwLjY4NjYgMTkuMzEzNCA4IDE2IDhaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTYgMTJDMTQuODk1NCAxMiAxNCAxMi44OTU0IDE0IDE0QzE0IDE1LjEwNDYgMTQuODk1NCAxNiAxNiAxNkMxNy4xMDQ2IDE2IDE4IDE1LjEwNDYgMTggMTRDMTggMTIuODk1NCAxNy4xMDQ2IDEyIDE2IDEyWiIgZmlsbD0iIzg5REZGMyIvPgo8L3N2Zz4=:image/svg+xml:32x32"}
     )
     public String echo(
@@ -107,11 +108,30 @@ public class EchoServer {
             examples = {"Hello, World!", "Testing 123"},
             required = true
         )
-        String message
+        String message,
+        Context context
     ) {
-        return String.format("[%s] Echo: %s",
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("[%s] Echo: %s",
             LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_TIME),
-            message);
+            message));
+
+        // Add truncated headers summary
+        var headers = context.getHeaders();
+        if (!headers.isEmpty()) {
+            sb.append(String.format(" | Headers: %d", headers.size()));
+            // Show first few keys, truncated
+            headers.keySet().stream().limit(3).forEach(key -> {
+                String val = headers.get(key);
+                String truncated = val.length() > 20 ? val.substring(0, 17) + "..." : val;
+                sb.append(String.format(" %s=%s", key, truncated));
+            });
+            if (headers.size() > 3) {
+                sb.append(" +more");
+            }
+        }
+
+        return sb.toString();
     }
 
     @McpTool(
