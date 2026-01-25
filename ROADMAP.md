@@ -67,16 +67,16 @@ public String getSession() {
 
 ### Feature: Icons
 **Priority**: Medium
-**Status**: Not Started
+**Status**: Completed ✅
 **Assignee**: Unassigned
 
 #### Description
-Support icons for tools and resources to improve UI/UX in MCP clients.
+Support icons for servers, tools, resources, and prompts to improve UI/UX in MCP clients.
 
 #### Requirements
 - Support icon URLs (http/https)
 - Support data URIs for inline icons
-- Support emoji icons (Unicode)
+- Support multiple sizes and themes
 - Icons optional on all components
 - Follow MCP spec icon format
 
@@ -85,41 +85,51 @@ Support icons for tools and resources to improve UI/UX in MCP clients.
 @McpTool(
     name = "search",
     description = "Search files",
-    icon = "🔍"  // Emoji
+    icons = {"https://example.com/search-icon.png:image/png:48x48"}
 )
 public String search(String query) { ... }
 
 @McpTool(
     name = "calculate",
     description = "Calculate",
-    icon = "https://example.com/calc-icon.png"  // URL
+    icons = {
+        "https://example.com/calc-icon-light.png:image/png:48x48:light",
+        "https://example.com/calc-icon-dark.png:image/png:48x48:dark"
+    }
 )
 public double calculate(String expression) { ... }
 
 @McpResource(
     uri = "config://app",
     name = "Configuration",
-    icon = "data:image/svg+xml;base64,..."  // Data URI
+    icons = {"data:image/svg+xml;base64,...:any"}
 )
 public String getConfig() { ... }
 ```
 
 #### Implementation Tasks
-- [ ] Add `icon` field to `@McpTool` annotation
-- [ ] Add `icon` field to `@McpResource` annotation
-- [ ] Add `icon` field to `@McpPrompt` annotation
-- [ ] Update `ToolMeta`, `ResourceMeta`, `PromptMeta` models
-- [ ] Update schema builders to include icon field
-- [ ] Add icon validation (URL format, emoji, data URI)
-- [ ] Add tests for different icon types
-- [ ] Update EchoServer with icon examples
-- [ ] Document icon usage in README
+- [x] Add `icons` field to `@McpServer` annotation
+- [x] Add `icons` field to `@McpTool` annotation
+- [x] Add `icons` field to `@McpResource` annotation
+- [x] Add `icons` field to `@McpPrompt` annotation
+- [x] Create `Icon` model class
+- [x] Create `IconValidator` class with security validations
+- [x] Update `ToolMeta`, `ResourceMeta`, `PromptMeta`, `ServerMeta` models
+- [x] Update `AnnotationScanner` to parse and validate icons
+- [x] Add icon string format parser (src:mimeType:sizes:theme)
+- [x] Add security validations (URI schemes, MIME types, sizes, themes)
+- [x] Create `IconValidatorTest` with comprehensive test coverage
+- [x] Create `IconExampleServer` with usage examples
+- [x] Document icon usage in `docs/icons-implementation.md`
 
 #### Dependencies
 - None
 
 #### Related Issues
 - None
+
+#### Completion Notes
+Fully compliant with MCP Icons specification. Supports HTTPS URLs, data URIs, multiple sizes, themes (light/dark), and includes comprehensive security validations.
 
 ---
 
