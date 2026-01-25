@@ -583,24 +583,76 @@ public class PlannerTool {
     }
 
     private PlanStore.Task parseTaskFromJson(String json) {
-        // Simplified JSON parsing for demonstration
-        // In production, use proper JSON library
         try {
-            // This is a placeholder - real implementation would parse JSON properly
-            String title = json.contains("\"title\"") ? "Parsed Task" : "Task";
+            // Simple JSON parser for task objects
+            // Extract title
+            String title = extractJsonField(json, "title");
+            if (title == null || title.isBlank()) {
+                throw new PlannerException("Task JSON must contain a 'title' field: " + json);
+            }
+
+            // Extract description (optional)
+            String description = extractJsonField(json, "description");
+            if (description == null) {
+                description = "";
+            }
+
+            // Extract execution_type (optional)
+            String execTypeStr = extractJsonField(json, "execution_type");
+            PlanStore.TaskExecutionType execType = PlanStore.TaskExecutionType.SEQUENTIAL;
+            if (execTypeStr != null) {
+                execType = parseExecutionType(execTypeStr);
+            }
+
+            // Extract dependencies (optional)
+            List<String> dependencies = new ArrayList<>();
+            String depsStr = extractJsonField(json, "dependencies");
+            if (depsStr != null && depsStr.startsWith("[") && depsStr.endsWith("]")) {
+                // Parse array: ["id1", "id2"]
+                String[] deps = depsStr.substring(1, depsStr.length() - 1).split(",");
+                for (String dep : deps) {
+                    String trimmed = dep.trim().replaceAll("^\"|\"$", "");
+                    if (!trimmed.isEmpty()) {
+                        dependencies.add(trimmed);
+                    }
+                }
+            }
+
             return new PlanStore.Task(
                 null,
                 title,
-                "",
+                description,
                 PlanStore.TaskStatus.PENDING,
-                PlanStore.TaskExecutionType.SEQUENTIAL,
-                new ArrayList<>(),
+                execType,
+                dependencies,
                 new ArrayList<>(),
                 java.time.Instant.now(),
                 java.time.Instant.now()
             );
         } catch (Exception e) {
-            throw new PlannerException("Invalid task JSON: " + json, e);
+            throw new PlannerException("Invalid task JSON: " + json + ". Error: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Extract a field value from JSON string.
+     * Simple regex-based extraction for basic JSON objects.
+     */
+    private String extractJsonField(String json, String fieldName) {
+        // Pattern: "fieldName": "value" or "fieldName": "value",
+        // Or for arrays: "fieldName": ["value1", "value2"]
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+            "\"" + fieldName + "\"\\s*:\\s*(\\[[^\\]]*\\]|\"[^\"]*\"|[^,}]+)"
+        );
+        java.util.regex.Matcher matcher = pattern.matcher(json);
+        if (matcher.find()) {
+            String value = matcher.group(1).trim();
+            // Remove quotes if present
+            if (value.startsWith("\"") && value.endsWith("\"")) {
+                value = value.substring(1, value.length() - 1);
+            }
+            return value;
+        }
+        return null;
     }
 }

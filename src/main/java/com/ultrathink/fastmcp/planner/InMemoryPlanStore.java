@@ -35,11 +35,17 @@ public class InMemoryPlanStore implements PlanStore {
         String planId = generateId();
         Instant now = Instant.now();
 
+        // Clear any existing tasks from previous plan creation with same tasks
         // Generate IDs for all tasks and store them
         List<Task> tasksWithIds = new ArrayList<>();
         for (Task task : rootTasks) {
             Task taskWithId = assignTaskIds(task);
             tasksWithIds.add(taskWithId);
+        }
+
+        // Ensure all tasks (including subtasks) are in tasksById
+        for (Task task : tasksWithIds) {
+            storeTaskRecursively(task);
         }
 
         Plan plan = new Plan(
@@ -256,6 +262,13 @@ tasksById.put(taskId, updated);
         for (Task task : tasks) {
             result.add(task);
             flattenTasks(task.subtasks(), result);
+        }
+    }
+
+    private void storeTaskRecursively(Task task) {
+        tasksById.put(task.id(), task);
+        for (Task subtask : task.subtasks()) {
+            storeTaskRecursively(subtask);
         }
     }
 

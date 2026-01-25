@@ -19,6 +19,15 @@ public interface TodoStore {
     String add(String task);
 
     /**
+     * Add a new todo item with priority.
+     *
+     * @param task the task description
+     * @param priority the priority level
+     * @return the todo ID
+     */
+    String add(String task, TodoPriority priority);
+
+    /**
      * List all todo items, optionally filtered by status.
      *
      * @param status optional status filter (null for all)
@@ -33,6 +42,14 @@ public interface TodoStore {
      * @param status the new status
      */
     void updateStatus(String id, TodoStatus status);
+
+    /**
+     * Update a todo item's task description.
+     *
+     * @param id the todo ID
+     * @param task the new task description
+     */
+    void updateTask(String id, String task);
 
     /**
      * Delete a todo item.

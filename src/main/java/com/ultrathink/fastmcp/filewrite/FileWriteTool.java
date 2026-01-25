@@ -106,13 +106,15 @@ public class FileWriteTool {
             description = """
                 Array of text lines to write to or append to the file. Used only with writeLines and appendLines modes.
                 Each element in the array will be written as a separate line.
+                An empty array [] will create an empty file (writeLines) or perform no append (appendLines).
                 """,
             examples = {
                 "[\"Line 1\", \"Line 2\", \"Line 3\"]",
                 "[\"{\"name\": \"John\"}\", \"{\"name\": \"Jane\"}\"]",
-                "[\"# Header\", \"## Subheader\", \"Content here\"]"
+                "[\"# Header\", \"## Subheader\", \"Content here\"]",
+                "[]"  // Empty array creates empty file
             },
-            constraints = "Maximum 100,000 lines. Each line is treated as a separate string.",
+            constraints = "Maximum 100,000 lines. Each line is treated as a separate string. Empty array [] is allowed.",
             hints = "Lines will be joined with newline separators and automatically have a trailing newline added. Use this for structured data or when you need individual line control.",
             required = false
         )
@@ -274,14 +276,15 @@ public class FileWriteTool {
         if (path == null || path.trim().isEmpty()) {
             throw new FileWriteException("Path parameter is required for writeLines mode");
         }
-        if (lines == null || lines.isEmpty()) {
-            throw new FileWriteException("Lines parameter is required for writeLines mode");
+        if (lines == null) {
+            throw new FileWriteException("Lines parameter cannot be null for writeLines mode");
         }
 
         if (lines.size() > MAX_LINES) {
             throw new FileWriteException("Number of lines exceeds maximum of " + MAX_LINES);
         }
 
+        // Allow empty array to create an empty file
         String content = String.join("\n", lines);
         if (!content.isEmpty() && !content.endsWith("\n")) {
             content += "\n";
@@ -297,14 +300,15 @@ public class FileWriteTool {
         if (path == null || path.trim().isEmpty()) {
             throw new FileWriteException("Path parameter is required for appendLines mode");
         }
-        if (lines == null || lines.isEmpty()) {
-            throw new FileWriteException("Lines parameter is required for appendLines mode");
+        if (lines == null) {
+            throw new FileWriteException("Lines parameter cannot be null for appendLines mode");
         }
 
         if (lines.size() > MAX_LINES) {
             throw new FileWriteException("Number of lines exceeds maximum of " + MAX_LINES);
         }
 
+        // Allow empty array (no-op append)
         String content = String.join("\n", lines);
         if (!content.isEmpty() && !content.endsWith("\n")) {
             content += "\n";

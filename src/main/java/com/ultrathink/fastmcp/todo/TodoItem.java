@@ -10,7 +10,8 @@ public record TodoItem(
     String task,
     TodoStatus status,
     Instant createdAt,
-    Instant updatedAt
+    Instant updatedAt,
+    TodoPriority priority  // NEW: Priority field for sorting
 ) {
     public TodoItem {
         if (id == null || id.isBlank()) {
@@ -21,6 +22,9 @@ public record TodoItem(
         }
         if (status == null) {
             throw new IllegalArgumentException("Status cannot be null");
+        }
+        if (priority == null) {
+            throw new IllegalArgumentException("Priority cannot be null");
         }
     }
 }

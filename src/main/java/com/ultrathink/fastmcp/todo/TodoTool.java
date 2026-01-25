@@ -4,6 +4,7 @@ import com.ultrathink.fastmcp.annotations.McpParam;
 import com.ultrathink.fastmcp.annotations.McpTool;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -13,6 +14,7 @@ import java.util.List;
  * - Add new todos
  * - List todos (optionally filtered by status)
  * - Update todo status
+ * - Update todo task/description
  * - Delete todos
  * - Clear completed todos
  * <p>
@@ -62,15 +64,15 @@ public class TodoTool {
 
                 **add** - Create a new todo:
                   - task (required): Description of the task
-                  - priority (optional): Task priority level
+                  - priority (optional): Task priority level (low/medium/high/critical)
 
                 **list** - Display todos:
                   - status (optional): Filter by status (pending/in_progress/completed)
-                  - sort (optional): Sort order (status/date/priority)
+                  - sort (optional): Sort order (status/date/priority/alpha)
 
                 **update** - Modify existing todo:
                   - id (required): Todo identifier
-                  - status (required): New status value
+                  - status (optional): New status value
                   - task (optional): New description (if changing text)
 
                 **delete** - Remove a todo:
@@ -191,7 +193,7 @@ public class TodoTool {
                 Common workflow: pending -> in_progress -> completed
                 """,
             examples = {"completed", "in_progress", "pending"},
-            constraints = "Required for 'update' mode. Must be one of: pending, in_progress, completed.",
+            constraints = "Optional for 'update' mode. Must be one of: pending, in_progress, completed.",
             hints = "Use 'in_progress' when starting work, 'completed' when done. Can move back to 'pending' if needed.",
             required = false
         )
@@ -276,14 +278,13 @@ public class TodoTool {
             throw new TodoException("Parameter 'task' is required for 'add' mode. Provide a task description.");
         }
 
-        // Create the todo
-        String id = store.add(task);
-        String response = String.format("Added todo (ID: %s): %s", id, task);
+        // Parse priority
+        TodoPriority prio = TodoPriority.fromString(priority);
 
-        // Add priority info if provided
-        if (priority != null && !priority.isBlank()) {
-            response += String.format(" [Priority: %s]", priority);
-        }
+        // Create the todo
+        String id = store.add(task, prio);
+        String response = String.format("Added todo (ID: %s): %s [Priority: %s]",
+            id, task, prio.getDisplayName());
 
         return response;
     }
@@ -322,13 +323,18 @@ public class TodoTool {
      * Handle the 'update' mode - modify an existing todo.
      */
     private String handleUpdate(String id, String newStatus, String newTask) {
-        // Validate required parameters
+        // At least one of newStatus or newTask must be provided
         if (id == null || id.isBlank()) {
             throw new TodoException("Parameter 'id' is required for 'update' mode. Provide the todo ID to update.");
         }
 
         if (newStatus == null || newStatus.isBlank()) {
-            throw new TodoException("Parameter 'newStatus' is required for 'update' mode. Provide the new status value.");
+            if (newTask == null || newTask.isBlank()) {
+                throw new TodoException("At least one of 'newStatus' or 'newTask' is required for 'update' mode.");
+            }
+            // Only updating task text
+            store.updateTask(id, newTask);
+            return String.format("Updated todo (ID: %s): %s", id, newTask);
         }
 
         // Parse and validate status
@@ -343,7 +349,7 @@ public class TodoTool {
             throw new TodoException("Todo not found with ID: %s. Use 'list' mode to see valid IDs.".formatted(id));
         }
 
-        // Update the todo
+        // Update status
         store.updateStatus(id, status);
 
         // Build response
@@ -355,9 +361,8 @@ public class TodoTool {
 
         // Add task update if provided
         if (newTask != null && !newTask.isBlank()) {
-            // Note: This would require store.updateTask() method
-            // For now, just indicate the intention
-            response += String.format("%nNote: Task text update to '%s' would be implemented here", newTask);
+            store.updateTask(id, newTask);
+            response += String.format("\nTask description updated to: %s", newTask);
         }
 
         return response;
@@ -407,7 +412,7 @@ public class TodoTool {
 
         return switch (sort.toLowerCase()) {
             case "status" -> sorted.stream()
-                .sorted((a, b) -> a.status().compareTo(b.status()))
+                .sorted(Comparator.comparing(TodoItem::status))
                 .toList();
 
             case "date" -> sorted.stream()
@@ -415,15 +420,11 @@ public class TodoTool {
                 .toList();
 
             case "priority" -> sorted.stream()
-                .sorted((a, b) -> {
-                    // Assuming priority is stored or can be derived
-                    // For now, just return original order
-                    return 0;
-                })
+                .sorted(Comparator.comparing((TodoItem t) -> t.priority().getValue()).reversed())
                 .toList();
 
             case "alpha" -> sorted.stream()
-                .sorted((a, b) -> a.task().compareToIgnoreCase(b.task()))
+                .sorted(Comparator.comparing(TodoItem::task, String.CASE_INSENSITIVE_ORDER))
                 .toList();
 
             default -> sorted;
@@ -473,7 +474,15 @@ public class TodoTool {
             case COMPLETED -> "✅";
         };
 
-        return String.format("%s [%s] %s\n",
+        String prioIcon = switch (todo.priority()) {
+            case LOW -> "🟢";
+            case MEDIUM -> "🟡";
+            case HIGH -> "🟠";
+            case CRITICAL -> "🔴";
+        };
+
+        return String.format("%s %s [%s] %s\n",
+            prioIcon,
             statusIcon,
             todo.id(),
             todo.task()

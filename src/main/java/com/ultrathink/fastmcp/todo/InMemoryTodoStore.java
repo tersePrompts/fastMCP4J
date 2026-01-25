@@ -27,9 +27,14 @@ public class InMemoryTodoStore implements TodoStore {
 
     @Override
     public String add(String task) {
+        return add(task, TodoPriority.MEDIUM); // Default priority
+    }
+
+    @Override
+    public String add(String task, TodoPriority priority) {
         String id = generateId();
         Instant now = Instant.now();
-        TodoItem todo = new TodoItem(id, task, TodoStatus.PENDING, now, now);
+        TodoItem todo = new TodoItem(id, task, TodoStatus.PENDING, now, now, priority);
 
         todosById.put(id, todo);
         todos.add(todo);
@@ -59,11 +64,39 @@ public class InMemoryTodoStore implements TodoStore {
             existing.task(),
             status,
             existing.createdAt(),
-            Instant.now()
+            Instant.now(),
+            existing.priority()  // Preserve priority
         );
 
         todosById.put(id, updated);
-        
+
+        // Update in list (remove old, add new to maintain order)
+        todos.removeIf(todo -> todo.id().equals(id));
+        todos.add(updated);
+    }
+
+    @Override
+    public void updateTask(String id, String task) {
+        TodoItem existing = todosById.get(id);
+        if (existing == null) {
+            throw new TodoException("Todo not found: " + id);
+        }
+
+        if (task == null || task.isBlank()) {
+            throw new IllegalArgumentException("Task cannot be null or blank");
+        }
+
+        TodoItem updated = new TodoItem(
+            existing.id(),
+            task,
+            existing.status(),
+            existing.createdAt(),
+            Instant.now(),
+            existing.priority()  // Preserve priority
+        );
+
+        todosById.put(id, updated);
+
         // Update in list (remove old, add new to maintain order)
         todos.removeIf(todo -> todo.id().equals(id));
         todos.add(updated);
