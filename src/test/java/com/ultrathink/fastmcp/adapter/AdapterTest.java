@@ -82,15 +82,16 @@ class AdapterTest {
             .filter(t -> t.getName().equals("echo"))
             .findFirst()
             .orElseThrow();
-        
+
         ToolHandler handler = new ToolHandler(
             server,
             toolMeta,
             new ArgumentBinder(),
             new ResponseMarshaller(),
-            "test-server"
+            "test-server",
+            null  // No hooks for this test
         );
-        
+
         Map<String, Object> args = new HashMap<>();
         args.put("message", "hello");
         McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testTool", args);
@@ -119,13 +120,14 @@ class AdapterTest {
             toolMeta,
             new ArgumentBinder(),
             new ResponseMarshaller(),
-            "test-server"
+            "test-server",
+            null  // No hooks for this test
         );
-        
+
         Map<String, Object> args = new HashMap<>();
         args.put("message", "hello");
         McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testTool", args);
-        
+
         Mono<McpSchema.CallToolResult> resultMono = handler.asHandler().apply(null, request);
 
         McpSchema.CallToolResult result = resultMono.block();
@@ -151,9 +153,10 @@ class AdapterTest {
             toolMeta,
             new ArgumentBinder(),
             new ResponseMarshaller(),
-            "test-server"
+            "test-server",
+            null  // No hooks for this test
         );
-        
+
         // Missing required primitive argument should cause error
         Map<String, Object> args = new HashMap<>();
         args.put("a", 3);  // Missing 'b' parameter

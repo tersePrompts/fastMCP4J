@@ -2,6 +2,7 @@ package com.ultrathink.fastmcp.adapter;
 
 import com.ultrathink.fastmcp.context.ContextImpl;
 import com.ultrathink.fastmcp.context.McpContext;
+import com.ultrathink.fastmcp.hook.HookManager;
 import com.ultrathink.fastmcp.model.ToolMeta;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -33,17 +34,19 @@ public class ToolHandler {
     private final ArgumentBinder binder;
     private final ResponseMarshaller marshaller;
     private final String serverName;
-    
+    private final HookManager hookManager;
+
     // Session state storage - in production this could be backed by Redis, etc.
     private final Map<String, Map<String, Object>> sessionStates = new ConcurrentHashMap<>();
 
-    public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder, 
-                     ResponseMarshaller marshaller, String serverName) {
+    public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder,
+                     ResponseMarshaller marshaller, String serverName, HookManager hookManager) {
         this.instance = instance;
         this.meta = meta;
         this.binder = binder;
         this.marshaller = marshaller;
         this.serverName = serverName;
+        this.hookManager = hookManager;
     }
 
     public BiFunction<McpAsyncServerExchange, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>> asHandler() {
@@ -51,19 +54,35 @@ public class ToolHandler {
             try {
                 // Create and set context for this request
                 setupContext(exchange);
-                
+
+                // Execute pre-hooks
+                if (hookManager != null) {
+                    hookManager.executePreHooks(meta.getName(), request.arguments());
+                }
+
                 Object[] args = binder.bind(meta.getMethod(), request.arguments());
                 Object result = meta.getMethod().invoke(instance, args);
 
                 Mono<McpSchema.CallToolResult> resultMono;
                 if (meta.isAsync()) {
-                    resultMono = ((Mono<?>) result).map(marshaller::marshal)
+                    resultMono = ((Mono<?>) result)
+                        .map(r -> {
+                            // Execute post-hooks for async
+                            if (hookManager != null) {
+                                hookManager.executePostHooks(meta.getName(), request.arguments(), r);
+                            }
+                            return marshaller.marshal(r);
+                        })
                         .doFinally(signal -> cleanupContext());
                 } else {
+                    // Execute post-hooks for sync
+                    if (hookManager != null) {
+                        hookManager.executePostHooks(meta.getName(), request.arguments(), result);
+                    }
                     resultMono = Mono.just(marshaller.marshal(result))
                         .doFinally(signal -> cleanupContext());
                 }
-                
+
                 return resultMono.onErrorResume(e -> {
                     cleanupContext();
                     return Mono.just(errorResult(e));

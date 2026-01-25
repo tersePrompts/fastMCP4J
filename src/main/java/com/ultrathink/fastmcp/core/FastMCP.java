@@ -5,6 +5,7 @@ import com.ultrathink.fastmcp.adapter.*;
 import com.ultrathink.fastmcp.annotations.McpMemory;
 import com.ultrathink.fastmcp.annotations.McpTodo;
 import com.ultrathink.fastmcp.annotations.McpPlanner;
+import com.ultrathink.fastmcp.hook.HookManager;
 import com.ultrathink.fastmcp.memory.InMemoryMemoryStore;
 import com.ultrathink.fastmcp.memory.MemoryStore;
 import com.ultrathink.fastmcp.memory.MemoryTool;
@@ -101,6 +102,10 @@ public final class FastMCP {
         Object instance = serverClass.getDeclaredConstructor().newInstance();
         ServerMeta meta = scanner.scan(serverClass);
         serverName = meta.getName(); // Set server name for context
+
+        // Create HookManager for pre/post hooks
+        HookManager hookManager = new HookManager(instance, meta.getTools());
+
         var mapper = new JacksonMcpJsonMapper(new ObjectMapper());
 
         io.modelcontextprotocol.server.McpServer.AsyncSpecification<?> builder = switch (transport) {
@@ -135,7 +140,7 @@ public final class FastMCP {
                     .completions()
                     .build());
 
-        meta.getTools().forEach(t -> builder.tools(buildTool(t, instance)));
+        meta.getTools().forEach(t -> builder.tools(buildTool(t, instance, hookManager)));
         meta.getResources().forEach(r -> builder.resources(buildResource(r, instance)));
         meta.getPrompts().forEach(p -> builder.prompts(buildPrompt(p, instance)));
 
@@ -169,7 +174,7 @@ public final class FastMCP {
             TodoStore todoStoreInstance = todoStore != null ? todoStore : new InMemoryTodoStore();
             TodoTool todoTool = new TodoTool(todoStoreInstance);
             ServerMeta todoMeta = scanner.scan(TodoTool.class);
-            todoMeta.getTools().forEach(t -> builder.tools(buildTool(t, todoTool)));
+            todoMeta.getTools().forEach(t -> builder.tools(buildTool(t, todoTool, null)));
         }
 
         // Register planner tools if @McpPlanner annotation is present
@@ -177,7 +182,7 @@ public final class FastMCP {
             PlanStore planStoreInstance = planStore != null ? planStore : new InMemoryPlanStore();
             PlannerTool plannerTool = new PlannerTool(planStoreInstance);
             ServerMeta plannerMeta = scanner.scan(PlannerTool.class);
-            plannerMeta.getTools().forEach(t -> builder.tools(buildTool(t, plannerTool)));
+            plannerMeta.getTools().forEach(t -> builder.tools(buildTool(t, plannerTool, null)));
         }
 
         return builder.build();
@@ -195,7 +200,7 @@ public final class FastMCP {
     }
 
     @SuppressWarnings("unchecked")
-    private McpServerFeatures.AsyncToolSpecification buildTool(ToolMeta toolMeta, Object instance) {
+    private McpServerFeatures.AsyncToolSpecification buildTool(ToolMeta toolMeta, Object instance, HookManager hookManager) {
         Map<String, Object> s = schemaGenerator.generate(toolMeta.getMethod());
         var tool = McpSchema.Tool.builder()
                 .name(toolMeta.getName())
@@ -207,7 +212,7 @@ public final class FastMCP {
                         null, null, null))
                 .build();
 
-        var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(), new ResponseMarshaller(), serverName);
+        var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(), new ResponseMarshaller(), serverName, hookManager);
         return new McpServerFeatures.AsyncToolSpecification(tool, null, handler.asHandler());
     }
 
