@@ -124,7 +124,7 @@
 ## Package Structure
 
 ```
-io.github.fastmcp/
+com.ultrathink.fastmcp/
 ├── annotations/      # CHUNK 1 (can be done first, standalone)
 │   ├── McpServer.java
 │   ├── McpTool.java
@@ -873,7 +873,7 @@ public class PromptHandler {
 **ResourceHandler spec**:
 
 ```java
-package io.github.fastmcp.adapter;
+package com.ultrathink.fastmcp.adapter;
 
 import com.ultrathink.fastmcp.adapter.ArgumentBinder;
 import com.ultrathink.fastmcp.adapter.ResponseMarshaller;
@@ -937,7 +937,7 @@ public class ResourceHandler {
 **PromptHandler spec**:
 
 ```java
-package io.github.fastmcp.adapter;
+package com.ultrathink.fastmcp.adapter;
 
 import com.ultrathink.fastmcp.adapter.ArgumentBinder;
 import com.ultrathink.fastmcp.model.PromptMeta;

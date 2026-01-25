@@ -13,7 +13,7 @@
 
 ### SchemaCache.java
 ```java
-package io.github.fastmcp.schema;
+package com.ultrathink.fastmcp.schema;
 
 import java.lang.reflect.Type;
 import java.util.Map;
@@ -39,7 +39,7 @@ public class SchemaCache {
 ### SchemaGenerator.java
 
 ```java
-package io.github.fastmcp.schema;
+package com.ultrathink.fastmcp.schema;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import exception.com.ultrathink.fastmcp.FastMcpException;
@@ -175,7 +175,7 @@ public class SchemaGenerator {
 ### SchemaGeneratorTest.java
 
 ```java
-package io.github.fastmcp.schema;
+package com.ultrathink.fastmcp.schema;
 
 import com.ultrathink.fastmcp.schema.SchemaGenerator;
 import org.junit.jupiter.api.Test;

@@ -12,7 +12,7 @@
 
 ### FastMcpException.java
 ```java
-package io.github.fastmcp.exception;
+package com.ultrathink.fastmcp.exception;
 
 public class FastMcpException extends RuntimeException {
     public FastMcpException(String message) {
@@ -32,7 +32,7 @@ public class FastMcpException extends RuntimeException {
 ### FastMcpExceptionTest.java
 
 ```java
-package io.github.fastmcp.exception;
+package com.ultrathink.fastmcp.exception;
 
 import com.ultrathink.fastmcp.exception.FastMcpException;
 import org.junit.jupiter.api.Test;
