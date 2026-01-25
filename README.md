@@ -1,134 +1,244 @@
-# fastMCP4J
+<div align="center">
 
-**A batteries-included framework for building MCP servers in Java**
+# FastMCP4J
 
-FastMCP4J brings the simplicity of [FastMCP](https://gofastmcp.com) (Python/TypeScript) to Java, reducing boilerplate from 30+ lines to ~10 lines per MCP server.
+### A batteries-included framework for building MCP servers in Java
+
+[![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
+[![Maven](https://img.shields.io/badge/Maven-3.8+-red.svg)](https://maven.apache.org/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-168%20Passing-brightgreen.svg)](src/test/java)
+
+Bringing the simplicity of [FastMCP](https://gofastmcp.com) to Java — reduce boilerplate from 30+ lines to ~10 lines per MCP server.
+
+</div>
+
+---
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Features](#features)
+- [Installation](#installation)
+- [Core Concepts](#core-concepts)
+- [Examples](#examples)
+- [Configuration](#configuration)
+- [Available Tools](#available-tools)
+- [Testing](#testing)
+- [Contributing](#contributing)
+
+---
 
 ## Quick Start
+
+Create an MCP server in just 10 lines:
 
 ```java
 @McpServer(name = "Calculator", version = "1.0.0")
 public class CalculatorServer {
 
-    @McpTool(description = "Add two numbers with enhanced parameter descriptions")
+    @McpTool(description = "Add two numbers")
     public int add(
-        @McpParam(
-            description = "First number to add",
-            examples = {"10", "42", "-5"},
-            constraints = "Must be a valid integer"
-        )
-        int a,
-
-        @McpParam(
-            description = "Second number to add",
-            examples = {"5", "13", "100"},
-            constraints = "Must be a valid integer"
-        )
-        int b
+        @McpParam(description = "First number") int a,
+        @McpParam(description = "Second number") int b
     ) {
         return a + b;
     }
 
     public static void main(String[] args) {
         FastMCP.server(CalculatorServer.class)
-            .streamable()  // or .stdio() or .sse()
+            .streamable()
             .port(3000)
             .run();
     }
 }
 ```
 
+---
+
 ## Features
 
-### Core Components ✅
-- **Tools** - `@McpTool` with enhanced parameter descriptions via `@McpParam`
-- **Resources** - `@McpResource` for exposing data/content
-- **Prompts** - `@McpPrompt` for LLM interaction templates
-- **Enhanced Parameters** - `@McpParam` with descriptions, examples, constraints, hints, and defaults
-- **Memory** - `@McpMemory` for persistent storage and cross-session learning
+### Core MCP Elements
 
-### Transport & Runtime ✅
-- **Multiple transports** - stdio, Server-Sent Events (SSE), HTTP Streamable
-- **Async support** - `@McpAsync` with Project Reactor (Mono/Flux)
-- **Auto schema generation** - JSON schemas from Java types + enhanced metadata
-- **Pure Java 17+** - No Spring, no Jakarta EE, minimal dependencies
+| Feature | Annotation | Description |
+|---------|------------|-------------|
+| **Tools** | `@McpTool` | Expose methods as callable MCP tools |
+| **Resources** | `@McpResource` | Serve data/content with URI access |
+| **Prompts** | `@McpPrompt` | Define LLM interaction templates |
+| **Parameters** | `@McpParam` | Rich parameter metadata (descriptions, examples, constraints) |
 
-## Feature Comparison
+### Built-in Tools
 
-### ✅ Implemented (v0.1.0)
+| Annotation | Tool | Description |
+|------------|------|-------------|
+| `@McpMemory` | memory | Persistent storage for cross-session learning |
+| `@McpTodo` | todo | Task management with priorities and status |
+| `@McpPlanner` | planner | Task decomposition and planning |
+| `@McpFileRead` | fileread | File reading, grep, and statistics |
+| `@McpFileWrite` | filewrite | File writing and directory operations |
 
-| Feature | Description | Implementation |
-|---------|-------------|----------------|
-| **Tools** | Expose functions as MCP tools | `@McpTool` with auto schema generation |
-| **Resources** | Serve content/data | `@McpResource` with MIME type support |
-| **Prompts** | LLM interaction templates | `@McpPrompt` with parameterization |
-| **Enhanced Parameters** | Rich parameter metadata for LLMs | `@McpParam` (descriptions, examples, constraints, hints, defaults) |
-| **Async Support** | Reactive operations | `@McpAsync` with Reactor Mono/Flux |
-| **Multiple Transports** | stdio, SSE, HTTP | stdio, SSE, HTTP Streamable |
-| **Schema Generation** | Automatic JSON Schema | From Java types + enhanced metadata |
-| **Argument Binding** | Auto parameter mapping | Primitives, POJOs, Collections |
-| **Response Marshalling** | Auto response conversion | String, JSON, binary, multiple formats |
-| **Notifications** | Server→Client updates | Logging, progress, resource changes |
+### Transport Options
 
-### 🔄 In Progress (v0.2.0)
+| Method | Transport | Use Case |
+|--------|-----------|----------|
+| `.stdio()` | STDIO | CLI tools, local agents (default) |
+| `.sse()` | HTTP SSE | Long-lived connections, server push |
+| `.streamable()` | HTTP Streamable | Bidirectional streaming, latest protocol |
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| **Context Access** | Access request/client context | High |
-| **Icons** | Tool/resource icons | Medium |
-| **Pagination** | Large result set handling | High |
-| **Progress Tracking** | Long-running operation updates | Medium |
-| **Sampling** | LLM completion requests | Low |
+### Advanced Features
 
-### 📋 Roadmap (v0.3.0+)
+<details>
+<summary><b>Async Support</b> - Reactive operations with Project Reactor</summary>
 
-Based on [FastMCP Python features](https://gofastmcp.com):
+```java
+@McpTool(description = "Process data asynchronously")
+@McpAsync
+public Mono<String> processData(String datasetId) {
+    return Mono.fromCallable(() -> {
+        // Long-running operation
+        return "Processed: " + datasetId;
+    }).delayElement(Duration.ofSeconds(5));
+}
+```
+</details>
 
-#### Advanced Features
-- **Background Tasks** - Long-running operations with status tracking
-- **Dependencies** - Dependency injection for tools/resources
-- **Lifespan Management** - Startup/shutdown hooks
-- **Storage Backends** - Persistent storage integration
-- **Telemetry** - Metrics, tracing, and observability
-- **Versioning** - API versioning support
-- **Middleware** - Request/response interceptors
+<details>
+<summary><b>Hooks</b> - Pre/post execution hooks</summary>
 
-#### Authentication & Authorization
-- **Token Verification** - JWT/API key validation
-- **OAuth Integration** - OAuth 2.0 flows
-- **OIDC Support** - OpenID Connect integration
-- **Authorization** - Role-based access control (RBAC)
+```java
+@McpPreHook
+public void beforeToolCall(ToolContext ctx) {
+    System.out.println("Calling: " + ctx.getToolName());
+}
 
-#### MCP Providers (Server Composition)
-- **Local Providers** - Compose multiple MCP servers
-- **Filesystem Provider** - Expose filesystem as MCP resources
-- **MCP Proxy** - Proxy to remote MCP servers
-- **Skills** - Reusable MCP skill packages
-- **Custom Providers** - Build custom MCP providers
-- **Mounting** - Mount providers at specific paths
+@McpPostHook
+public void afterToolCall(ToolContext ctx) {
+    System.out.println("Completed: " + ctx.getToolName());
+}
+```
+</details>
 
-#### MCP Transforms
-- **Namespace** - Add prefixes to tools/resources
-- **Tool Transformation** - Modify tool schemas dynamically
-- **Visibility Control** - Show/hide components conditionally
-- **Resources as Tools** - Expose resources as callable tools
-- **Prompts as Tools** - Convert prompts to tool calls
+<details>
+<summary><b>Context Access</b> - Access request metadata</summary>
 
-### ❌ Not Planned
+```java
+@McpTool(description = "Get client info")
+public String getClientInfo(@McpContext Context context) {
+    return "Client ID: " + context.getClientId();
+}
+```
+</details>
 
-- **OpenAPI to MCP Converter** - Recommended for bootstrapping only, not core framework feature
-- **CLI Installation Tools** - Java deployment uses standard Maven/Gradle tooling
+<details>
+<summary><b>Icons</b> - Visual icons for tools/resources</summary>
 
-### Key Differences from FastMCP Python
+```java
+@McpTool(
+    description = "Search files",
+    icons = {
+        @Icon(type = "fa", name = "search"),
+        @Icon(type = "uri", uri = "file:///search.png")
+    }
+)
+public String search(String query) { ... }
+```
+</details>
 
-- **Async Model**: Python uses `async/await`; Java uses Project Reactor (`Mono`/`Flux`)
-- **Type System**: Java requires explicit types; enhanced with `@McpParam` metadata
-- **Deployment**: Java uses standard JAR packaging; no special CLI needed
-- **Framework Stack**: Pure Java 17+, no heavy frameworks (Spring, Jakarta EE)
+---
+
+## Installation
+
+### Maven
+
+```xml
+<dependency>
+    <groupId>com.ultrathink.fastmcp</groupId>
+    <artifactId>fastmcp-java</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+</dependency>
+```
+
+### Gradle
+
+```groovy
+implementation 'com.ultrathink.fastmcp:fastmcp-java:0.1.0-SNAPSHOT'
+```
+
+---
+
+## Core Concepts
+
+### Server Definition
+
+Use `@McpServer` to define your MCP server:
+
+```java
+@McpServer(
+    name = "MyServer",
+    version = "1.0.0",
+    description = "My awesome MCP server"
+)
+public class MyServer { }
+```
+
+### Fluent Builder API
+
+Configure your server with a fluent API:
+
+```java
+FastMCP.server(MyServer.class)
+    // Transport selection
+    .streamable()              // or .stdio() or .sse()
+
+    // Network configuration
+    .port(3000)                // HTTP port (default: 8080)
+    .mcpUri("/api/mcp")        // MCP endpoint (default: /mcp)
+    .baseUrl("https://example.com")
+
+    // Timeouts
+    .requestTimeout(Duration.ofMinutes(5))
+    .keepAliveSeconds(30)
+
+    // Server capabilities
+    .capabilities(c -> c
+        .tools(true)
+        .resources(true, true)
+        .prompts(true)
+        .logging()
+        .completions())
+
+    // Custom stores
+    .memoryStore(customMemoryStore)
+    .todoStore(customTodoStore)
+    .planStore(customPlanStore)
+
+    // Instructions
+    .instructions("You are a helpful assistant...")
+
+    .run();
+```
+
+### Server Capabilities Builder
+
+```java
+FastMCP.server(MyServer.class)
+    .capabilities(capabilities -> capabilities
+        .tools(true)                    // Enable tools with listChanged
+        .resources(true, true)          // Enable resources with subscribe + listChanged
+        .prompts(true)                  // Enable prompts with listChanged
+        .noTools()                      // Disable tools
+        .noResources()                  // Disable resources
+        .noPrompts()                    // Disable prompts
+        .logging()                      // Enable logging capability
+        .completions())                 // Enable completions capability
+    .run();
+```
+
+---
 
 ## Examples
 
-### Enhanced Parameters with @McpParam
+### Enhanced Parameters
 
 ```java
 @McpTool(name = "search_files", description = "Search files with advanced filtering")
@@ -157,6 +267,7 @@ public String searchFiles(
     boolean recursive
 ) {
     // Implementation
+    return "Found 5 files";
 }
 ```
 
@@ -201,21 +312,9 @@ public List<PromptMessage> codeReviewPrompt(
 ) {
     return List.of(
         new PromptMessage(Role.USER,
-            new TextContent("Review this " + language + " code..."))
+            new TextContent("Review this " + language + " code...")
+        )
     );
-}
-```
-
-### Async Operations
-
-```java
-@McpTool(description = "Process large dataset asynchronously")
-@McpAsync
-public Mono<String> processData(String datasetId) {
-    return Mono.fromCallable(() -> {
-        // Long-running operation
-        return "Processed: " + datasetId;
-    }).delayElement(Duration.ofSeconds(5));
 }
 ```
 
@@ -223,7 +322,7 @@ public Mono<String> processData(String datasetId) {
 
 ```java
 @McpServer(name = "LearningBot", version = "1.0.0")
-@McpMemory  // Enable memory for persistent storage
+@McpMemory  // Enable built-in memory tool
 public class LearningServer {
 
     @McpTool(description = "Remember information")
@@ -236,169 +335,154 @@ public class LearningServer {
 
     @McpTool(description = "Recall information")
     public String recall(String topic) {
-        // AI can use memory tool to retrieve stored information
         return "Recalling info about: " + topic;
     }
 
     public static void main(String[] args) {
         FastMCP.server(LearningServer.class)
+            .memoryStore(new InMemoryMemoryStore())  // Optional custom store
             .stdio()
             .run();
     }
 }
 ```
 
-The `@McpMemory` annotation enables a memory tool that allows AI agents to persist information across sessions. You can also customize the memory store:
+### Todo Tool
 
 ```java
-public static void main(String[] args) {
-    // Custom memory store with 50MB file size limit
-    MemoryStore customStore = new InMemoryMemoryStore("/memories", 50_000_000);
+@McpServer(name = "TaskManager", version = "1.0.0")
+@McpTodo  // Enable built-in todo tool
+public class TaskServer {
 
-    FastMCP.server(LearningServer.class)
-        .memoryStore(customStore)
-        .stdio()
-        .run();
+    public static void main(String[] args) {
+        FastMCP.server(TaskServer.class)
+            .todoStore(new InMemoryTodoStore())  // Optional custom store
+            .streamable()
+            .port(3000)
+            .run();
+    }
 }
 ```
 
-### Complete Server Example
+### Planner Tool
 
-See [EchoServer.java](src/test/java/com/ultrathink/fastmcp/example/EchoServer.java) for a comprehensive example demonstrating all features.
+```java
+@McpServer(name = "PlanningServer", version = "1.0.0")
+@McpPlanner  // Enable built-in planner tool
+public class PlanningServer {
 
-## MCP Client Configuration
+    public static void main(String[] args) {
+        FastMCP.server(PlanningServer.class)
+            .planStore(new InMemoryPlanStore())  // Optional custom store
+            .streamable()
+            .port(3000)
+            .run();
+    }
+}
+```
 
-Sample MCP client configurations are available in the [examples/mcp-configs](examples/mcp-configs/) directory for connecting to FastMCP4J servers from Claude Desktop or other MCP clients.
+### File Read/Write Tools
 
-### Quick Start with EchoServer
+```java
+@McpServer(name = "FileServer", version = "1.0.0")
+@McpFileRead   // Enable file reading tools
+@McpFileWrite  // Enable file writing tools
+public class FileServer {
 
-1. Start the server:
-   ```bash
-   mvn exec:java -Dexec.mainClass="com.ultrathink.fastmcp.example.EchoServer"
-   ```
+    public static void main(String[] args) {
+        FastMCP.server(FileServer.class)
+            .streamable()
+            .port(3000)
+            .run();
+    }
+}
+```
 
-2. Copy [examples/mcp-configs/echo-server-config.json](examples/mcp-configs/echo-server-config.json) to your Claude Desktop config:
-   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-   - **Linux**: `~/.config/Claude/claude_desktop_config.json`
+---
 
-3. Restart Claude Desktop and start chatting!
+## Configuration
 
-See [examples/mcp-configs/README.md](examples/mcp-configs/README.md) for detailed configuration options.
+### Connecting to Claude Desktop
 
-## MCP Client Configuration
+#### HTTP Streamable (Recommended)
 
-### Connecting to EchoServer
-
-To connect an MCP client (like Claude Desktop) to the EchoServer, add the server to your MCP configuration:
-
-#### For HTTP Streamable Transport (Default)
-
-**Claude Desktop (macOS)**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Claude Desktop (Windows)**: `%APPDATA%\Claude\claude_desktop_config.json`
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
-    "echo": {
+    "myserver": {
       "transport": {
         "type": "http_streamable",
-        "url": "http://localhost:3002/mcp",
-        "headers": {
-          "Accept": "application/json"
-        }
+        "url": "http://localhost:3000/mcp"
       }
     }
   }
 }
 ```
 
-#### For SSE Transport
-
-If you start EchoServer with `.sse()` instead of `.streamable()`:
+#### SSE Transport
 
 ```json
 {
   "mcpServers": {
-    "echo": {
+    "myserver": {
       "transport": {
         "type": "sse",
-        "url": "http://localhost:3002/mcp/sse"
+        "url": "http://localhost:3000/mcp/sse"
       }
     }
   }
 }
 ```
 
-#### For STDIO Transport
-
-For stdio transport, configure the command to run the server:
+#### STDIO Transport
 
 ```json
 {
   "mcpServers": {
-    "echo": {
+    "myserver": {
       "command": "java",
-      "args": [
-        "-cp",
-        "target/fastmcp-java-0.1.0-SNAPSHOT.jar",
-        "com.ultrathink.fastmcp.example.EchoServer"
-      ],
-      "env": {
-        "JAVA_HOME": "/path/to/java"
-      }
+      "args": ["-cp", "fastmcp-java.jar", "com.example.MyServer"]
     }
   }
 }
 ```
 
-### Available Tools
+---
 
-Once connected, EchoServer exposes the following tools:
+## Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `echo` | Echo back message with timestamp |
-| `calculate` | Perform arithmetic (add, subtract, multiply, divide) |
-| `processWithProgress` | Process task with progress reporting |
-| `asyncTask` | Async task with progress tracking |
-| `memory` | Persistent storage (view, create, str_replace, insert, delete, rename) |
-| `todo` | Task management (add, list, update, delete, clearCompleted) |
-| `planner` | Task planning (createPlan, listPlans, getPlan, addTask, updateTask, etc.) |
-| `fileread` | File operations (readLines, readFile, grep, getStats) |
-| `filewrite` | File operations (writeFile, appendFile, writeLines, deleteFile, createDirectory) |
+### Built-in Tool Sets
 
-### Testing the Connection
+| Tool Set | Operations |
+|----------|------------|
+| **memory** | `list`, `read`, `create`, `replace`, `insert`, `delete`, `rename` |
+| **todo** | `add`, `list`, `updateStatus`, `updateTask`, `delete`, `clearCompleted`, `get`, `count` |
+| **planner** | `createPlan`, `listPlans`, `getPlan`, `addTask`, `addSubtask`, `updateTaskStatus`, `getAllTasks`, `getNextTask`, `deletePlan` |
+| **fileread** | `readLines`, `readFile`, `grep`, `getStats` |
+| **filewrite** | `writeFile`, `appendFile`, `writeLines`, `deleteFile`, `createDirectory` |
 
-After starting EchoServer and adding it to your MCP config:
+---
 
-1. Restart Claude Desktop (or your MCP client)
-2. The server should appear in the list of available MCP servers
-3. Try using the `echo` tool with a test message
+## Testing
 
-Example interaction with Claude:
-```
-User: Use the echo tool to say "Hello, FastMCP4J!"
-Claude: [calls echo tool]
-Server: [17:30:45] Echo: Hello, FastMCP4J!
+Run the test suite:
+
+```bash
+mvn test
 ```
 
-## Status
+Run a specific test:
 
-✅ **v0.1.0** - Core features implemented
-- Tools, Resources, Prompts
-- Enhanced parameter descriptions (@McpParam)
-- Async support with Reactor
-- Multiple transports (stdio, SSE, HTTP Streamable)
-- Comprehensive test coverage (27/27 tests passing)
+```bash
+mvn test -Dtest=FastMCPTest
+```
 
-🚧 **v0.2.0** - In planning
-- Context access
-- Pagination
-- Icons
-- Progress tracking
+**Test Coverage**: 168 tests covering all core functionality
 
-See [Feature Comparison](#feature-comparison) for detailed roadmap.
+---
 
 ## Building
 
@@ -406,29 +490,40 @@ See [Feature Comparison](#feature-comparison) for detailed roadmap.
 # Build
 mvn clean install
 
-# Run tests
-mvn test
-
 # Run example server
 mvn exec:java -Dexec.mainClass="com.ultrathink.fastmcp.example.EchoServer"
 ```
+
+---
 
 ## Documentation
 
 - [Memory Tool Guide](docs/memory-tool.md)
 - [Enhanced Parameters Guide](docs/enhanced-parameters.md)
-- [API Documentation](PLAN.md) (Implementation details)
+- [API Documentation](PLAN.md)
+
+---
 
 ## Contributing
 
 FastMCP4J is in active development. Contributions are welcome!
 
 Areas of focus:
-- Context access and middleware
 - Authentication/authorization
 - MCP Providers and transforms
 - Storage backends
+- Additional transport options
+
+---
 
 ## License
 
 Apache License 2.0
+
+---
+
+<div align="center">
+
+**Built with ❤️ for the Java community**
+
+</div>
