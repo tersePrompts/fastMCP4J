@@ -65,6 +65,8 @@ public class SchemaGenerator {
         if (clazz == double.class || clazz == Double.class) return new HashMap<>(Map.of("type", "number"));
         if (clazz == boolean.class || clazz == Boolean.class) return new HashMap<>(Map.of("type", "boolean"));
         if (clazz.isEnum()) return enumSchema(clazz);
+        // For Object.class, return empty schema to allow any type
+        if (clazz == Object.class) return new HashMap<>();
         if (!clazz.isPrimitive()) return pojoSchema(clazz);
         throw new FastMcpException("Unsupported class type: " + clazz);
     }
