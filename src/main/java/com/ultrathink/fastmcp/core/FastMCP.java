@@ -24,6 +24,7 @@ public final class FastMCP {
     private final Class<?> serverClass;
     private final AnnotationScanner scanner = new AnnotationScanner();
     private final SchemaGenerator schemaGenerator = new SchemaGenerator();
+    private String serverName;
 
     private TransportType transport = TransportType.STDIO;
     private int port = 8080;
@@ -59,6 +60,7 @@ public final class FastMCP {
     private McpAsyncServer build() throws Exception {
         Object instance = serverClass.getDeclaredConstructor().newInstance();
         ServerMeta meta = scanner.scan(serverClass);
+        serverName = meta.getName(); // Set server name for context
         var mapper = new JacksonMcpJsonMapper(new ObjectMapper());
 
         McpServer.AsyncSpecification<?> builder = switch (transport) {
@@ -124,7 +126,7 @@ public final class FastMCP {
                         null, null, null))
                 .build();
 
-        var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(), new ResponseMarshaller());
+        var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(), new ResponseMarshaller(), serverName);
         return new McpServerFeatures.AsyncToolSpecification(tool, null, handler.asHandler());
     }
 
