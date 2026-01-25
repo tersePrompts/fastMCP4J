@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, pr-7]
   pull_request:
     branches: [main]
 

@@ -1,11 +1,11 @@
 package com.ultrathink.fastmcp.model;
 
 import com.ultrathink.fastmcp.icons.Icon;
-import lombok.Value;
+import lombok.Data;
 
 import java.util.List;
 
-@Value
+@Data
 public class ServerMeta {
     String name;
     String version;
@@ -14,4 +14,25 @@ public class ServerMeta {
     List<ResourceMeta> resources;
     List<PromptMeta> prompts;
     List<Icon> icons;
+
+    public ServerMeta() {}
+
+    public ServerMeta(String name, String version, String instructions, List<ToolMeta> tools, List<ResourceMeta> resources, List<PromptMeta> prompts) {
+        this.name = name;
+        this.version = version;
+        this.instructions = instructions;
+        this.tools = tools;
+        this.resources = resources;
+        this.prompts = prompts;
+    }
+
+    public ServerMeta(String name, String version, String instructions, List<ToolMeta> tools, List<ResourceMeta> resources, List<PromptMeta> prompts, List<Icon> icons) {
+        this.name = name;
+        this.version = version;
+        this.instructions = instructions;
+        this.tools = tools;
+        this.resources = resources;
+        this.prompts = prompts;
+        this.icons = icons;
+    }
 }

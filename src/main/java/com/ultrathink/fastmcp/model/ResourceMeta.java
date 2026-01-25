@@ -1,12 +1,12 @@
 package com.ultrathink.fastmcp.model;
 
 import com.ultrathink.fastmcp.icons.Icon;
-import lombok.Value;
+import lombok.Data;
 
 import java.lang.reflect.Method;
 import java.util.List;
 
-@Value
+@Data
 public class ResourceMeta {
     String uri;
     String name;
@@ -15,4 +15,25 @@ public class ResourceMeta {
     Method method;
     boolean async;
     List<Icon> icons;
+
+    public ResourceMeta() {}
+
+    public ResourceMeta(String uri, String name, String description, String mimeType, Method method, boolean async) {
+        this.uri = uri;
+        this.name = name;
+        this.description = description;
+        this.mimeType = mimeType;
+        this.method = method;
+        this.async = async;
+    }
+
+    public ResourceMeta(String uri, String name, String description, String mimeType, Method method, boolean async, List<Icon> icons) {
+        this.uri = uri;
+        this.name = name;
+        this.description = description;
+        this.mimeType = mimeType;
+        this.method = method;
+        this.async = async;
+        this.icons = icons;
+    }
 }

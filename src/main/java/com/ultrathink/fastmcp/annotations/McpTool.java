@@ -9,8 +9,8 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Target(METHOD)
 public @interface McpTool {
     String name() default "";
-    String description();
-    
+    String description() default "";
+
     /**
      * Icons for the tool.
      * Format: "src" or "src:mimeType:sizes:theme"
