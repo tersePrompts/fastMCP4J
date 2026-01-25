@@ -5,6 +5,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import reactor.core.publisher.Mono;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiFunction;
 
 /**
