@@ -2,7 +2,9 @@ package com.ultrathink.fastmcp.memory;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -61,7 +63,7 @@ public class InMemoryMemoryStore implements MemoryStore {
                     return entryPath.startsWith(normalizedPath + "/");
                 });
 
-            if (!isDir && !files.containsKey(normalizedPath)) {
+            if (!isDir && (normalizedPath == null || normalizedPath.isEmpty() || !files.containsKey(normalizedPath))) {
                 throw new MemoryException("Path does not exist: " + normalizedPath);
             }
 
@@ -215,6 +217,13 @@ public class InMemoryMemoryStore implements MemoryStore {
 
             files.put(normalizedPath, entry);
             fileContents.put(normalizedPath, content);
+            
+            // Build line numbers map for file content
+            Map<Integer, String> lineNumbersToContent = new HashMap<>();
+            String[] lines = content.split("\n");
+            for (int i = 0; i < lines.length; i++) {
+                lineNumbersToContent.put(i + 1, lines[i]);
+            }
         } finally {
             globalLock.writeLock().unlock();
         }
@@ -283,7 +292,10 @@ public class InMemoryMemoryStore implements MemoryStore {
                 throw new MemoryException("File not found: " + normalizedPath);
             }
 
-            List<String> lines = new ArrayList<>(List.of(content.split("\n", -1)));
+            List<String> lines = new ArrayList<>();
+            if (content != null && !content.isEmpty()) {
+                lines.addAll(Arrays.asList(content.split("\n")));
+            }
 
             if (insertLine < 0 || insertLine > lines.size()) {
                 throw new MemoryException(
@@ -297,8 +309,13 @@ public class InMemoryMemoryStore implements MemoryStore {
 
             lines.add(insertLine, insertText);
             String newContent = String.join("\n", lines);
-            fileContents.put(normalizedPath, newContent);
-
+            
+            // Rebuild line numbers map
+            Map<Integer, String> newLineNumbersToContent = new HashMap<>();
+            for (int i = 0; i < lines.size(); i++) {
+                newLineNumbersToContent.put(i + 1, lines.get(i));
+            }
+            
             // Update entry metadata
             MemoryEntry entry = files.get(normalizedPath);
             if (entry != null) {

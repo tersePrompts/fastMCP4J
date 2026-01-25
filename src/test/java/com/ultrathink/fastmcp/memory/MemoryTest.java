@@ -93,7 +93,7 @@ class MemoryTest {
         String content = "Line 1\nLine 3";
 
         store.create(path, content);
-        store.insert(path, 1, "Line 2\n");
+        store.insert(path, 0, "Line 2\n");
 
         MemoryStore.FileContent fileContent = store.read(path, Optional.empty());
         assertEquals(3, fileContent.lines().size());
