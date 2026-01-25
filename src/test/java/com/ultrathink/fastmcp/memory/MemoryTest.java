@@ -1,10 +1,12 @@
 package com.ultrathink.fastmcp.memory;
 
+import com.ultrathink.fastmcp.mcptools.memory.InMemoryMemoryStore;
+import com.ultrathink.fastmcp.mcptools.memory.MemoryException;
+import com.ultrathink.fastmcp.mcptools.memory.MemoryStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;

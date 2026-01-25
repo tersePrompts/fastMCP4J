@@ -5,7 +5,7 @@ import com.ultrathink.fastmcp.annotations.McpServer;
 import com.ultrathink.fastmcp.annotations.McpTool;
 import com.ultrathink.fastmcp.model.ServerMeta;
 import com.ultrathink.fastmcp.model.ToolMeta;
-import com.ultrathink.fastmcp.scanner.AnnotationScanner;
+import com.ultrathink.fastmcp.annotations.scanner.AnnotationScanner;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;

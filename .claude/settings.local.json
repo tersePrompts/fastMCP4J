@@ -28,7 +28,9 @@
       "Bash(\"C:\\\\Users\\\\av201\\\\.jdks\\\\ms-21.0.9\\\\bin\\\\java.exe\":*)",
       "Bash(echo:*)",
       "Bash(netstat:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(mvn dependency:tree:*)",
+      "Bash(git reset:*)"
     ]
   }
 }

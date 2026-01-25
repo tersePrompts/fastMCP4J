@@ -2,6 +2,8 @@ package com.ultrathink.fastmcp.scanner;
 
 import com.ultrathink.fastmcp.annotations.McpServer;
 import com.ultrathink.fastmcp.annotations.McpTool;
+import com.ultrathink.fastmcp.annotations.scanner.AnnotationScanner;
+import com.ultrathink.fastmcp.annotations.scanner.ValidationException;
 import com.ultrathink.fastmcp.model.ServerMeta;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;

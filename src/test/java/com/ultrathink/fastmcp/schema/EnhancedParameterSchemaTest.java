@@ -1,6 +1,7 @@
 package com.ultrathink.fastmcp.schema;
 
-import com.ultrathink.fastmcp.scanner.AnnotationScanner;
+import com.ultrathink.fastmcp.adapter.schema.SchemaGenerator;
+import com.ultrathink.fastmcp.annotations.scanner.AnnotationScanner;
 import com.ultrathink.fastmcp.model.ServerMeta;
 import com.ultrathink.fastmcp.model.ToolMeta;
 import com.ultrathink.fastmcp.test.EnhancedParameterServer;

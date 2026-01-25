@@ -1,5 +1,8 @@
 package com.ultrathink.fastmcp.planner;
 
+import com.ultrathink.fastmcp.mcptools.planner.InMemoryPlanStore;
+import com.ultrathink.fastmcp.mcptools.planner.PlanStore;
+import com.ultrathink.fastmcp.mcptools.planner.PlannerException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -271,7 +274,7 @@ String task3Id = store.addTask(planId, task3WithDeps);
 
     @Test
     void testDeleteNonExistentPlan() {
-        assertThrows(PlannerException.class, () -> 
+        assertThrows(PlannerException.class, () ->
             store.deletePlan("nonexistent-id")
         );
     }

@@ -1,6 +1,8 @@
 package com.ultrathink.fastmcp.filewrite;
 
-import org.junit.jupiter.api.AfterEach;
+import com.ultrathink.fastmcp.mcptools.filewrite.FileWriteException;
+import com.ultrathink.fastmcp.mcptools.filewrite.FileWriteResult;
+import com.ultrathink.fastmcp.mcptools.filewrite.FileWriteTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

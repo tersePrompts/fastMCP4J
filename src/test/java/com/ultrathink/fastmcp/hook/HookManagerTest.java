@@ -2,7 +2,7 @@ package com.ultrathink.fastmcp.hook;
 
 import com.ultrathink.fastmcp.annotations.*;
 import com.ultrathink.fastmcp.model.ToolMeta;
-import com.ultrathink.fastmcp.scanner.AnnotationScanner;
+import com.ultrathink.fastmcp.annotations.scanner.AnnotationScanner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

@@ -1,5 +1,6 @@
 package com.ultrathink.fastmcp.schema;
 
+import com.ultrathink.fastmcp.adapter.schema.SchemaGenerator;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
