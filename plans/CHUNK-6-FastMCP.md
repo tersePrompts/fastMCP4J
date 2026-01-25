@@ -13,7 +13,7 @@
 
 ### TransportType.java
 ```java
-package io.github.fastmcp.core;
+package com.ultrathink.fastmcp.core;
 
 public enum TransportType {
     STDIO,
@@ -25,7 +25,7 @@ public enum TransportType {
 ### FastMCP.java
 
 ```java
-package io.github.fastmcp.core;
+package com.ultrathink.fastmcp.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ultrathink.fastmcp.adapter.ArgumentBinder;
@@ -198,7 +198,7 @@ public class FastMCP {
 ### FastMCPTest.java
 
 ```java
-package io.github.fastmcp.core;
+package com.ultrathink.fastmcp.core;
 
 import com.ultrathink.fastmcp.core.FastMCP;
 import com.ultrathink.fastmcp.core.McpAsyncServer;

@@ -17,7 +17,7 @@
 ### ArgumentBinder.java
 
 ```java
-package io.github.fastmcp.adapter;
+package com.ultrathink.fastmcp.adapter;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -63,7 +63,7 @@ public class ArgumentBinder {
 ### ResponseMarshaller.java
 
 ```java
-package io.github.fastmcp.adapter;
+package com.ultrathink.fastmcp.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import exception.com.ultrathink.fastmcp.FastMcpException;
@@ -111,7 +111,7 @@ public class ResponseMarshaller {
 ### ToolHandler.java
 
 ```java
-package io.github.fastmcp.adapter;
+package com.ultrathink.fastmcp.adapter;
 
 import com.ultrathink.fastmcp.adapter.ArgumentBinder;
 import com.ultrathink.fastmcp.adapter.ResponseMarshaller;
@@ -162,7 +162,7 @@ public class ToolHandler {
 ### ResourceHandler.java
 
 ```java
-package io.github.fastmcp.adapter;
+package com.ultrathink.fastmcp.adapter;
 
 import com.ultrathink.fastmcp.adapter.ArgumentBinder;
 import com.ultrathink.fastmcp.model.ResourceMeta;
@@ -208,7 +208,7 @@ public class ResourceHandler {
 ### PromptHandler.java
 
 ```java
-package io.github.fastmcp.adapter;
+package com.ultrathink.fastmcp.adapter;
 
 import com.ultrathink.fastmcp.adapter.ArgumentBinder;
 import com.ultrathink.fastmcp.model.PromptMeta;
@@ -241,7 +241,7 @@ public class PromptHandler {
 ### AdapterTest.java
 
 ```java
-package io.github.fastmcp.adapter;
+package com.ultrathink.fastmcp.adapter;
 
 import com.ultrathink.fastmcp.adapter.ArgumentBinder;
 import com.ultrathink.fastmcp.adapter.ResponseMarshaller;
