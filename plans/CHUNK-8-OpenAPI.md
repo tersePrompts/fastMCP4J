@@ -11,7 +11,7 @@
 
 ### OpenApiSpec.java
 ```java
-package io.github.fastmcp.openapi;
+package com.ultrathink.fastmcp.openapi;
 
 import lombok.Value;
 import java.util.Map;
@@ -56,7 +56,7 @@ public class Schema {
 ### OpenApiGenerator.java
 
 ```java
-package io.github.fastmcp.openapi;
+package com.ultrathink.fastmcp.openapi;
 
 import model.com.ultrathink.fastmcp.ServerMeta;
 import model.com.ultrathink.fastmcp.ToolMeta;
@@ -154,7 +154,7 @@ public void generateOpenApiFile(String outputPath){
 ## Tests
 
 ```java
-package io.github.fastmcp.openapi;
+package com.ultrathink.fastmcp.openapi;
 
 import annotations.com.ultrathink.fastmcp.McpServer;
 import annotations.com.ultrathink.fastmcp.McpTool;

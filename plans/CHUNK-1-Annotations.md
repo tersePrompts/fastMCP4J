@@ -16,7 +16,7 @@
 
 ### McpServer.java
 ```java
-package io.github.fastmcp.annotations;
+package com.ultrathink.fastmcp.annotations;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
@@ -34,7 +34,7 @@ public @interface McpServer {
 
 ### McpTool.java
 ```java
-package io.github.fastmcp.annotations;
+package com.ultrathink.fastmcp.annotations;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
@@ -51,7 +51,7 @@ public @interface McpTool {
 
 ### McpResource.java
 ```java
-package io.github.fastmcp.annotations;
+package com.ultrathink.fastmcp.annotations;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
@@ -70,7 +70,7 @@ public @interface McpResource {
 
 ### McpPrompt.java
 ```java
-package io.github.fastmcp.annotations;
+package com.ultrathink.fastmcp.annotations;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
@@ -87,7 +87,7 @@ public @interface McpPrompt {
 
 ### McpAsync.java
 ```java
-package io.github.fastmcp.annotations;
+package com.ultrathink.fastmcp.annotations;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
@@ -107,7 +107,7 @@ public @interface McpAsync {
 ### AnnotationsTest.java
 
 ```java
-package io.github.fastmcp.annotations;
+package com.ultrathink.fastmcp.annotations;
 
 import com.ultrathink.fastmcp.annotations.*;
 import org.junit.jupiter.api.Test;

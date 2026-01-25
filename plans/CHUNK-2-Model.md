@@ -18,7 +18,7 @@
 ### ServerMeta.java
 
 ```java
-package io.github.fastmcp.model;
+package com.ultrathink.fastmcp.model;
 
 import com.ultrathink.fastmcp.model.PromptMeta;
 import com.ultrathink.fastmcp.model.ResourceMeta;
@@ -40,7 +40,7 @@ public class ServerMeta {
 
 ### ToolMeta.java
 ```java
-package io.github.fastmcp.model;
+package com.ultrathink.fastmcp.model;
 
 import lombok.Value;
 import java.lang.reflect.Method;
@@ -56,7 +56,7 @@ public class ToolMeta {
 
 ### ResourceMeta.java
 ```java
-package io.github.fastmcp.model;
+package com.ultrathink.fastmcp.model;
 
 import lombok.Value;
 import java.lang.reflect.Method;
@@ -74,7 +74,7 @@ public class ResourceMeta {
 
 ### PromptMeta.java
 ```java
-package io.github.fastmcp.model;
+package com.ultrathink.fastmcp.model;
 
 import lombok.Value;
 import java.lang.reflect.Method;
@@ -95,7 +95,7 @@ public class PromptMeta {
 ### ModelTest.java
 
 ```java
-package io.github.fastmcp.model;
+package com.ultrathink.fastmcp.model;
 
 import com.ultrathink.fastmcp.model.ServerMeta;
 import com.ultrathink.fastmcp.model.ToolMeta;

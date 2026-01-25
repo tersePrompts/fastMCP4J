@@ -14,7 +14,7 @@
 
 ### NotificationType.java
 ```java
-package io.github.fastmcp.notification;
+package com.ultrathink.fastmcp.notification;
 
 public enum NotificationType {
     LOGGING,
@@ -25,7 +25,7 @@ public enum NotificationType {
 
 ### LoggingNotification.java
 ```java
-package io.github.fastmcp.notification;
+package com.ultrathink.fastmcp.notification;
 
 import lombok.Value;
 
@@ -39,7 +39,7 @@ public class LoggingNotification {
 
 ### ProgressNotification.java
 ```java
-package io.github.fastmcp.notification;
+package com.ultrathink.fastmcp.notification;
 
 import lombok.Value;
 
@@ -53,7 +53,7 @@ public class ProgressNotification {
 
 ### ResourceChangedNotification.java
 ```java
-package io.github.fastmcp.notification;
+package com.ultrathink.fastmcp.notification;
 
 import lombok.Value;
 
@@ -73,7 +73,7 @@ enum ResourceType {
 ### NotificationSender.java
 
 ```java
-package io.github.fastmcp.notification;
+package com.ultrathink.fastmcp.notification;
 
 import exception.com.ultrathink.fastmcp.FastMcpException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -135,7 +135,7 @@ public NotificationSender getNotificationSender() {
 ## Tests
 
 ```java
-package io.github.fastmcp.notification;
+package com.ultrathink.fastmcp.notification;
 
 import com.ultrathink.fastmcp.notification.LoggingNotification;
 import com.ultrathink.fastmcp.notification.ProgressNotification;

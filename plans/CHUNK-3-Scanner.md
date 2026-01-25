@@ -14,7 +14,7 @@
 ### ValidationException.java
 
 ```java
-package io.github.fastmcp.scanner;
+package com.ultrathink.fastmcp.scanner;
 
 import exception.com.ultrathink.fastmcp.FastMcpException;
 
@@ -28,7 +28,7 @@ public class ValidationException extends FastMcpException {
 ### AnnotationScanner.java
 
 ```java
-package io.github.fastmcp.scanner;
+package com.ultrathink.fastmcp.scanner;
 
 import com.ultrathink.fastmcp.annotations.*;
 import com.ultrathink.fastmcp.model.PromptMeta;
@@ -128,7 +128,7 @@ public class AnnotationScanner {
 ### AnnotationScannerTest.java
 
 ```java
-package io.github.fastmcp.scanner;
+package com.ultrathink.fastmcp.scanner;
 
 import com.ultrathink.fastmcp.annotations.McpServer;
 import com.ultrathink.fastmcp.annotations.McpTool;
