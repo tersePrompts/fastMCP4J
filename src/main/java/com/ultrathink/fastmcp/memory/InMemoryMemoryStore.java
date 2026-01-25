@@ -63,7 +63,7 @@ public class InMemoryMemoryStore implements MemoryStore {
                     return entryPath.startsWith(normalizedPath + "/");
                 });
 
-            if (!isDir && (normalizedPath == null || normalizedPath.isEmpty() || !files.containsKey(normalizedPath))) {
+            if (!isDir && normalizedPath != null && !normalizedPath.isEmpty() && !files.containsKey(normalizedPath)) {
                 throw new MemoryException("Path does not exist: " + normalizedPath);
             }
 
@@ -74,8 +74,8 @@ public class InMemoryMemoryStore implements MemoryStore {
                 String entryPath = entry.path();
                 if (entryPath.equals(normalizedPath)) return;
 
-                if (entryPath.startsWith(normalizedPath + "/")) {
-                    String relative = entryPath.substring(normalizedPath.length() + 1);
+                if (normalizedPath.isEmpty() || entryPath.startsWith(normalizedPath + "/")) {
+                    String relative = normalizedPath.isEmpty() ? entryPath : entryPath.substring(normalizedPath.length() + 1);
                     String firstSegment = relative.contains("/")
                         ? relative.substring(0, relative.indexOf("/"))
                         : relative;
@@ -194,10 +194,19 @@ public class InMemoryMemoryStore implements MemoryStore {
                 throw new MemoryException("File already exists: " + normalizedPath);
             }
 
-            // Check parent directory exists
+            // Create parent directories if they don't exist
             String parentPath = getParentPath(normalizedPath);
             if (!parentPath.isEmpty() && !exists(parentPath)) {
-                throw new MemoryException("Parent directory does not exist: " + parentPath);
+                // Create parent directory entry
+                MemoryEntry parentEntry = new MemoryEntry(
+                    parentPath,
+                    true,
+                    0,
+                    Instant.now().toEpochMilli(),
+                    Optional.empty()
+                );
+                files.put(parentPath, parentEntry);
+                fileContents.put(parentPath, "");
             }
 
             long size = content.getBytes().length;
@@ -307,8 +316,24 @@ public class InMemoryMemoryStore implements MemoryStore {
                 );
             }
 
-            lines.add(insertLine, insertText);
+            // Split insertText by newlines and add all lines
+            String[] insertLines = insertText.split("\n", -1); // Keep trailing empty strings
+            
+            // If insertText ends with \n, the last element will be empty
+            // We need to handle this properly to maintain line structure
+            if (insertLines.length > 0) {
+                for (int i = 0; i < insertLines.length; i++) {
+                    if (i == insertLines.length - 1 && insertLines[i].isEmpty() && insertText.endsWith("\n")) {
+                        // This is a trailing newline, don't insert empty line
+                        continue;
+                    }
+                    lines.add(insertLine + i, insertLines[i]);
+                }
+            }
             String newContent = String.join("\n", lines);
+            
+            // Update the file contents
+            fileContents.put(normalizedPath, newContent);
             
             // Rebuild line numbers map
             Map<Integer, String> newLineNumbersToContent = new HashMap<>();

@@ -123,8 +123,25 @@ public class InMemoryPlanStore implements PlanStore {
             Instant.now()
         );
 
-        tasksById.put(parentTaskId, updatedParent);
-        updatePlanTimestamp(planId);
+tasksById.put(parentTaskId, updatedParent);
+        
+        // Also update the parent task in the plan's root tasks if it's there
+        Plan plan = plansById.get(planId);
+        if (plan != null) {
+            List<Task> updatedRootTasks = updateTaskInList(plan.rootTasks(), updatedParent);
+            Plan updatedPlan = new Plan(
+                plan.id(),
+                plan.name(),
+                plan.description(),
+                plan.status(),
+                plan.createdAt(),
+                Instant.now(),
+                updatedRootTasks
+            );
+            plansById.put(planId, updatedPlan);
+            allPlans.removeIf(p -> p.id().equals(planId));
+            allPlans.add(updatedPlan);
+        }
 
         return subtaskWithId.id();
     }
@@ -148,8 +165,25 @@ public class InMemoryPlanStore implements PlanStore {
             Instant.now()
         );
 
-        tasksById.put(taskId, updated);
-        updatePlanTimestamp(planId);
+tasksById.put(taskId, updated);
+        
+        // Also update the task in the plan's root tasks
+        Plan plan = plansById.get(planId);
+        if (plan != null) {
+            List<Task> updatedRootTasks = updateTaskInList(plan.rootTasks(), updated);
+            Plan updatedPlan = new Plan(
+                plan.id(),
+                plan.name(),
+                plan.description(),
+                plan.status(),
+                plan.createdAt(),
+                Instant.now(),
+                updatedRootTasks
+            );
+            plansById.put(planId, updatedPlan);
+            allPlans.removeIf(p -> p.id().equals(planId));
+            allPlans.add(updatedPlan);
+        }
     }
 
     @Override
@@ -164,7 +198,7 @@ public class InMemoryPlanStore implements PlanStore {
         return allTasks;
     }
 
-    @Override
+@Override
     public Task getNextTask(String planId) {
         List<Task> allTasks = getAllTasks(planId);
         
@@ -235,6 +269,34 @@ public class InMemoryPlanStore implements PlanStore {
                 Task dep = tasksById.get(depId);
                 return dep != null && dep.status() == TaskStatus.COMPLETED;
             });
+    }
+
+    private List<Task> updateTaskInList(List<Task> tasks, Task updatedTask) {
+        List<Task> result = new ArrayList<>();
+        for (Task task : tasks) {
+            if (task.id().equals(updatedTask.id())) {
+                result.add(updatedTask);
+            } else {
+                // Recursively update in subtasks
+                List<Task> updatedSubtasks = updateTaskInList(task.subtasks(), updatedTask);
+                if (!updatedSubtasks.equals(task.subtasks())) {
+                    result.add(new Task(
+                        task.id(),
+                        task.title(),
+                        task.description(),
+                        task.status(),
+                        task.executionType(),
+                        task.dependencies(),
+                        updatedSubtasks,
+                        task.createdAt(),
+                        task.updatedAt()
+                    ));
+                } else {
+                    result.add(task);
+                }
+            }
+        }
+        return result;
     }
 
     private void updatePlanTimestamp(String planId) {

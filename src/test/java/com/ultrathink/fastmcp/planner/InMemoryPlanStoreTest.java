@@ -123,11 +123,11 @@ public class InMemoryPlanStoreTest {
     }
 
     @Test
-    void testGetNextTask() {
+void testGetNextTask() {
         String planId = store.createPlan("Test Plan", "Description", new ArrayList<>());
 
         PlanStore.Task task1 = createTask("Task 1");
-        store.addTask(planId, task1);
+        String task1Id = store.addTask(planId, task1);
 
         PlanStore.Task task2 = createTask("Task 2");
         String task2Id = store.addTask(planId, task2);
@@ -141,15 +141,15 @@ public class InMemoryPlanStoreTest {
             new ArrayList<>(),
             Instant.now(), Instant.now()
         );
-        store.addTask(planId, task3WithDeps);
+String task3Id = store.addTask(planId, task3WithDeps);
 
         // First available task should be task1 or task2 (no dependencies)
         PlanStore.Task next = store.getNextTask(planId);
         assertNotNull(next);
-        assertTrue(next.id().equals(task1.id()) || next.id().equals(task2Id));
+        assertTrue(next.id().equals(task1Id) || next.id().equals(task2Id));
 
         // Mark task1 as in progress
-        store.updateTaskStatus(planId, task1.id(), PlanStore.TaskStatus.IN_PROGRESS);
+        store.updateTaskStatus(planId, task1Id, PlanStore.TaskStatus.IN_PROGRESS);
 
         // Next should be task2 (task3 depends on task2)
         next = store.getNextTask(planId);
@@ -162,7 +162,7 @@ public class InMemoryPlanStoreTest {
         // Now task3 should be available
         next = store.getNextTask(planId);
         assertNotNull(next);
-        assertEquals(task3WithDeps.id(), next.id());
+        assertEquals(task3Id, next.id());
     }
 
     @Test
@@ -194,13 +194,14 @@ public class InMemoryPlanStoreTest {
         PlanStore.Task task2 = createTask("Task 2");
         String task2Id = store.addTask(planId, task2);
 
+        PlanStore.Task task3 = createTask("Task 3");
         String task3Id = null; // Declare first
         
         PlanStore.Task task3WithDeps = new PlanStore.Task(
             null, task3.title(), task3.description(),
             PlanStore.TaskStatus.PENDING,
             PlanStore.TaskExecutionType.SEQUENTIAL,
-            List.of(task1Id, task3Id), // Depends on BOTH
+            List.of(task1Id, task2Id), // Depends on BOTH
             new ArrayList<>(),
             Instant.now(), Instant.now()
         );
