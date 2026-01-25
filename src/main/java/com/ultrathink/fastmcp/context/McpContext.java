@@ -1,73 +1,31 @@
 package com.ultrathink.fastmcp.context;
 
-import java.util.Map;
-import java.util.Optional;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
- * Context information for MCP request execution.
- * Provides access to client metadata, request details, and session information.
- *
- * @version 0.2.0
- * @status NOT_IMPLEMENTED
+ * Annotation for injecting MCP Context into method parameters.
+ * When a method parameter is annotated with @McpContext, the Context
+ * object is automatically injected during method invocation.
+ * 
+ * Context provides access to MCP capabilities like logging, progress reporting,
+ * resource/prompt access, LLM sampling, and session state.
+ * 
+ * Example:
+ * <pre>
+ * {@code
+ * @McpTool(description = "Process file with logging")
+ * public String processFile(String path, @McpContext Context ctx) {
+ *     ctx.info("Processing: " + path);
+ *     // ... processing logic
+ *     return "Done";
+ * }
+ * }
+ * </pre>
  */
-public interface McpContext {
-
-    /**
-     * Get the client identifier
-     * @return client ID if available
-     */
-    Optional<String> getClientId();
-
-    /**
-     * Get client name
-     * @return client name if available
-     */
-    Optional<String> getClientName();
-
-    /**
-     * Get client version
-     * @return client version if available
-     */
-    Optional<String> getClientVersion();
-
-    /**
-     * Get request headers
-     * @return map of headers
-     */
-    Map<String, String> getHeaders();
-
-    /**
-     * Get session identifier
-     * @return session ID if available
-     */
-    Optional<String> getSessionId();
-
-    /**
-     * Get transport type (stdio, sse, http_streamable)
-     * @return transport type
-     */
-    String getTransportType();
-
-    /**
-     * Get custom context attribute
-     * @param key attribute key
-     * @return attribute value if present
-     */
-    Optional<Object> getAttribute(String key);
-
-    /**
-     * Set custom context attribute
-     * @param key attribute key
-     * @param value attribute value
-     */
-    void setAttribute(String key, Object value);
-
-    /**
-     * Get current context from ThreadLocal
-     * @return current context
-     * @throws IllegalStateException if no context is bound to current thread
-     */
-    static McpContext current() {
-        throw new UnsupportedOperationException("Not implemented yet");
-    }
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.PARAMETER)
+public @interface McpContext {
 }
