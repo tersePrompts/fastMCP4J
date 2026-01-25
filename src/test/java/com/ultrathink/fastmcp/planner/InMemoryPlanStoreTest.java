@@ -194,7 +194,6 @@ public class InMemoryPlanStoreTest {
         PlanStore.Task task2 = createTask("Task 2");
         String task2Id = store.addTask(planId, task2);
 
-        PlanStore.Task task3 = createTask("Task 3");
         String task3Id = null; // Declare first
         
         PlanStore.Task task3WithDeps = new PlanStore.Task(
