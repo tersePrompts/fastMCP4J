@@ -21,7 +21,7 @@ public class EchoServer {
         FastMCP.server(EchoServer.class)
             .streamable()
                // .sse()
-                .port(3000)
+                .port(3002)
             .mcpUri("/mcp")  // Optional, defaults to "/mcp"
             .run();
     }

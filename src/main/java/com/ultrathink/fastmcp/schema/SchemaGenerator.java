@@ -1,6 +1,7 @@
 package com.ultrathink.fastmcp.schema;
 
 import com.ultrathink.fastmcp.exception.FastMcpException;
+import com.ultrathink.fastmcp.annotations.McpParam;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.lang.reflect.*;
 import java.util.*;
@@ -21,8 +22,15 @@ public class SchemaGenerator {
         for (Parameter p : method.getParameters()) {
             String name = getParamName(p);
             Map<String, Object> pSchema = generateTypeSchema(p.getParameterizedType());
+            
+            // Create a fresh copy for this parameter
+            pSchema = new HashMap<>(pSchema);
+            
+            // Enhance with @McpParam annotations
+            enhanceSchemaWithMcpParam(pSchema, p);
+            
             props.put(name, pSchema);
-            if (!isOptional(p)) {
+            if (!isOptional(p) && !isParamOptional(p)) {
                 required.add(name);
             }
         }
@@ -51,11 +59,11 @@ public class SchemaGenerator {
     }
 
     private Map<String, Object> generateClassSchema(Class<?> clazz) {
-        if (clazz == String.class) return Map.of("type", "string");
-        if (clazz == int.class || clazz == Integer.class) return Map.of("type", "integer");
-        if (clazz == long.class || clazz == Long.class) return Map.of("type", "integer", "format", "int64");
-        if (clazz == double.class || clazz == Double.class) return Map.of("type", "number");
-        if (clazz == boolean.class || clazz == Boolean.class) return Map.of("type", "boolean");
+        if (clazz == String.class) return new HashMap<>(Map.of("type", "string"));
+        if (clazz == int.class || clazz == Integer.class) return new HashMap<>(Map.of("type", "integer"));
+        if (clazz == long.class || clazz == Long.class) return new HashMap<>(Map.of("type", "integer", "format", "int64"));
+        if (clazz == double.class || clazz == Double.class) return new HashMap<>(Map.of("type", "number"));
+        if (clazz == boolean.class || clazz == Boolean.class) return new HashMap<>(Map.of("type", "boolean"));
         if (clazz.isEnum()) return enumSchema(clazz);
         if (!clazz.isPrimitive()) return pojoSchema(clazz);
         throw new FastMcpException("Unsupported class type: " + clazz);
@@ -89,11 +97,11 @@ public class SchemaGenerator {
         Type[] args = pt.getActualTypeArguments();
         if (raw == List.class || raw == java.util.List.class) {
             Map<String, Object> itemSchema = generateTypeSchema(args[0]);
-            return Map.of("type", "array", "items", itemSchema);
+            return new HashMap<>(Map.of("type", "array", "items", itemSchema));
         }
         if (raw == Map.class) {
             Map<String, Object> valueSchema = generateTypeSchema(args[1]);
-            return Map.of("type", "object", "additionalProperties", valueSchema);
+            return new HashMap<>(Map.of("type", "object", "additionalProperties", valueSchema));
         }
         // Fallback for other generics
         throw new FastMcpException("Unsupported generic type: " + pt);
@@ -102,7 +110,7 @@ public class SchemaGenerator {
     private Map<String, Object> enumSchema(Class<?> clazz) {
         Object[] constants = clazz.getEnumConstants();
         String[] values = Arrays.stream(constants).map(Object::toString).toArray(String[]::new);
-        return Map.of("type", "string", "enum", values);
+        return new HashMap<>(Map.of("type", "string", "enum", values));
     }
 
     private String getParamName(Parameter p) {
@@ -119,5 +127,45 @@ public class SchemaGenerator {
             if (raw == java.util.Optional.class) return true;
         }
         return false;
+    }
+
+    private boolean isParamOptional(Parameter p) {
+        McpParam ann = p.getAnnotation(McpParam.class);
+        return ann != null && !ann.required();
+    }
+
+    private void enhanceSchemaWithMcpParam(Map<String, Object> schema, Parameter param) {
+        McpParam ann = param.getAnnotation(McpParam.class);
+        if (ann == null) return;
+
+        // Add detailed description
+        if (!ann.description().isEmpty()) {
+            schema.put("description", ann.description());
+        }
+
+        // Add examples
+        if (ann.examples().length > 0) {
+            schema.put("examples", Arrays.asList(ann.examples()));
+        }
+
+        // Add constraints
+        if (!ann.constraints().isEmpty()) {
+            schema.put("constraints", ann.constraints());
+        }
+
+        // Add hints for LLM
+        if (!ann.hints().isEmpty()) {
+            schema.put("hints", ann.hints());
+        }
+
+        // Add default value if provided
+        if (!ann.defaultValue().isEmpty()) {
+            schema.put("default", ann.defaultValue());
+        }
+
+        // Override required status based on annotation
+        if (!ann.required()) {
+            schema.put("required", false);
+        }
     }
 }

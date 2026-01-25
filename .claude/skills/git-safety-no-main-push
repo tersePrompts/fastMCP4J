@@ -1,0 +1,25 @@
+Title: Git Safety - No Direct Main Pushes
+
+**Core Rule**: Never push directly to main branch. Always create pull requests.
+
+**When working as an AI agent**:
+- Before any git push operation, check current branch
+- If current branch is 'main' or 'master', refuse to push
+- Instead, create a feature branch and raise a PR
+- Use `gh pr create` for pull request creation
+
+**Safe Git Workflow**:
+1. Create feature branch: `git checkout -b feature/description`
+2. Make changes and commit
+3. Push feature branch: `git push -u origin feature/description`
+4. Create pull request: `gh pr create --title "Description" --body "Summary"`
+5. Never: `git push origin main`
+
+**Verification Steps**:
+- Always run `git branch --show-current` before pushing
+- If it returns 'main' or 'master', stop and create a feature branch
+- Use `git status` to verify working directory state
+- Check `gh pr list` to see existing PRs
+
+**Emergency Override**:
+Only push to main if explicitly instructed with "override main protection" or similar clear override command.
