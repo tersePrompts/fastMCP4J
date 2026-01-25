@@ -10,4 +10,11 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 public @interface McpTool {
     String name() default "";
     String description();
+    
+    /**
+     * Icons for the tool.
+     * Format: "src" or "src:mimeType:sizes:theme"
+     * Multiple icons can be provided.
+     */
+    String[] icons() default {};
 }

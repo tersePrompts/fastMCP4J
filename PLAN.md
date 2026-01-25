@@ -48,6 +48,16 @@
 4. Sync and async handlers
 5. Stateless request/response handling
 
+### Icons Feature ✅ (v0.2)
+**Status**: Completed
+The Icons feature has been fully implemented following the MCP specification:
+
+- Icons for servers, tools, resources, and prompts
+- Support for HTTPS URLs and data URIs
+- Multiple sizes and themes (light/dark)
+- Comprehensive security validation (URI schemes, MIME types)
+- See `docs/icons-implementation.md` for full documentation
+
 ### Out of Scope (Future)
 - OAuth, auth providers
 - OpenAPI generation

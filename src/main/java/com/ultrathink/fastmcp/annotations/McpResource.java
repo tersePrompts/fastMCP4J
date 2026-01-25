@@ -12,4 +12,11 @@ public @interface McpResource {
     String name() default "";
     String description() default "";
     String mimeType() default "text/plain";
+    
+    /**
+     * Icons for the resource.
+     * Format: "src" or "src:mimeType:sizes:theme"
+     * Multiple icons can be provided.
+     */
+    String[] icons() default {};
 }
