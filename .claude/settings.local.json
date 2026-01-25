@@ -36,7 +36,14 @@
       "Bash(mvn -Dtest=SchemaGeneratorTest test:*)",
       "Bash(findstr:*)",
       "Bash(mvn:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(ls:*)",
+      "mcp__jarp-mcp__scan_dependencies",
+      "mcp__jarp-mcp__analyze_class",
+      "mcp__jarp-mcp__decompile_class",
+      "Bash(powershell:*)",
+      "Bash(dir:*)",
+      "Bash(jar:*)"
     ]
   }
 }
