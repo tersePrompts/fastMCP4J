@@ -30,7 +30,12 @@
       "Bash(netstat:*)",
       "Bash(taskkill:*)",
       "Bash(mvn dependency:tree:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(javac:*)",
+      "Bash(java:*)",
+      "Bash(mvn -Dtest=SchemaGeneratorTest test:*)",
+      "Bash(findstr:*)",
+      "Bash(mvn:*)"
     ]
   }
 }

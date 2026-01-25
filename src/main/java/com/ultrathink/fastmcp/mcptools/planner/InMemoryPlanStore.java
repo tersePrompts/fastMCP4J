@@ -206,11 +206,12 @@ tasksById.put(taskId, updated);
     public Task getNextTask(String planId) {
         List<Task> allTasks = getAllTasks(planId);
 
-        // Find first pending task with all dependencies satisfied
+        // Find first pending task with all dependencies satisfied and no completed subtasks
         for (Task task : allTasks) {
             if (task.status() == TaskStatus.PENDING && areDependenciesComplete(task)) {
-                // Skip tasks whose subtasks are all complete (parent task is effectively done)
-                if (hasAllSubtasksComplete(task)) {
+                // Skip if all subtasks are complete
+                if (task.subtasks() != null && !task.subtasks().isEmpty()
+                        && task.subtasks().stream().allMatch(st -> st.status() == TaskStatus.COMPLETED)) {
                     continue;
                 }
                 return task;
@@ -218,18 +219,6 @@ tasksById.put(taskId, updated);
         }
 
         return null;
-    }
-
-    /**
-     * Check if all subtasks of a task are complete.
-     * A parent task with all completed subtasks should be considered complete.
-     */
-    private boolean hasAllSubtasksComplete(Task task) {
-        if (task.subtasks() == null || task.subtasks().isEmpty()) {
-            return false; // No subtasks, task is actionable
-        }
-        return task.subtasks().stream()
-            .allMatch(st -> st.status() == TaskStatus.COMPLETED);
     }
 
     @Override

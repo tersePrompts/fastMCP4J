@@ -7,14 +7,7 @@ import java.util.List;
 import com.ultrathink.fastmcp.exception.FastMcpException;
 import io.modelcontextprotocol.spec.McpSchema;
 
-/**
- * Converts method return values to MCP CallToolResult.
- * Primitives/String → text content. Objects → JSON serialized. null → empty result.
- * <p>
- * Note: We don't serialize the result to JSON here. The McpSchema.TextContent object
- * will be serialized by the MCP SDK's JacksonMcpJsonMapper, which handles the proper
- * format for TextContent (with 'type' and 'text' fields).
- */
+/** Converts method return values to MCP CallToolResult. */
 public class ResponseMarshaller {
 
     public McpSchema.CallToolResult marshal(Object value) {
@@ -28,7 +21,6 @@ public class ResponseMarshaller {
         } else if (value instanceof Boolean b) {
             text = b.toString();
         } else {
-            // For complex objects, convert to JSON string
             ObjectMapper mapper = new ObjectMapper()
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL);
             try {
