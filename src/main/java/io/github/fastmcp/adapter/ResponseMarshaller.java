@@ -1,13 +1,14 @@
 package io.github.fastmcp.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import io.github.fastmcp.exception.FastMcpException;
-import io.modelcontextprotocol.spec.McpSchema.*;
+import io.modelcontextprotocol.sdk.CallToolResult;
+import io.modelcontextprotocol.sdk.TextContent;
 
 // Lightweight response marshalling to text payloads expected by MCP client
 public class ResponseMarshaller {
@@ -33,14 +34,14 @@ public class ResponseMarshaller {
         }
 
         return CallToolResult.builder()
-            .addTextContent(text)
+            .content(List.of(new TextContent(text)))
             .isError(false)
             .build();
     }
 
     private CallToolResult emptyResult() {
         return CallToolResult.builder()
-            .textContent(List.of())
+            .content(new ArrayList<>())
             .isError(false)
             .build();
     }

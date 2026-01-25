@@ -9,4 +9,5 @@ public class ToolMeta {
     String description;
     Method method;
     boolean async;
+    boolean progressEnabled;
 }

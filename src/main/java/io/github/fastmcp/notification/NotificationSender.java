@@ -20,7 +20,11 @@ public class NotificationSender {
     }
 
     public void progress(double token, double progress, String message) {
-        ProgressNotification notification = new ProgressNotification(token, progress, message);
+        progress(token, progress, null, message);
+    }
+    
+    public void progress(double token, double progress, Double total, String message) {
+        ProgressNotification notification = new ProgressNotification(token, progress, total, message);
         sendNotification("notifications/progress", notification);
     }
 
@@ -31,10 +35,17 @@ public class NotificationSender {
 
     private void sendNotification(String method, Object notification) {
         try {
-            String json = mapper.writeValueAsString(notification);
+            NotificationMessage msg = new NotificationMessage(method, notification);
+            String json = mapper.writeValueAsString(msg);
             sendFunction.accept(json);
         } catch (Exception e) {
             throw new FastMcpException("Failed to send notification", e);
+        }
+    }
+    
+    private record NotificationMessage(String jsonrpc, String method, Object params) {
+        NotificationMessage(String method, Object params) {
+            this("2.0", method, params);
         }
     }
 }

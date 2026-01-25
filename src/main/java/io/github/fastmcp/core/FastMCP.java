@@ -6,6 +6,7 @@ import io.github.fastmcp.schema.SchemaGenerator;
 import io.github.fastmcp.adapter.ToolHandler;
 import io.github.fastmcp.adapter.ArgumentBinder;
 import io.github.fastmcp.adapter.ResponseMarshaller;
+import io.github.fastmcp.adapter.ProgressAwareToolHandler;
 import io.github.fastmcp.model.ServerMeta;
 import io.github.fastmcp.model.ToolMeta;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -103,12 +104,25 @@ public class FastMCP {
         }
 
         private Object createHandlerForTool(ToolMeta toolMeta) {
-            return new ToolHandler(
-                serverInstance,
-                toolMeta,
-                new ArgumentBinder(),
-                new ResponseMarshaller()
-            ).asHandler();
+            ArgumentBinder binder = new ArgumentBinder();
+            ResponseMarshaller marshaller = new ResponseMarshaller();
+            
+            if (toolMeta.isProgressEnabled() && notificationSender != null) {
+                return new ProgressAwareToolHandler(
+                    serverInstance,
+                    toolMeta,
+                    binder,
+                    marshaller,
+                    notificationSender
+                ).asHandler();
+            } else {
+                return new ToolHandler(
+                    serverInstance,
+                    toolMeta,
+                    binder,
+                    marshaller
+                ).asHandler();
+            }
         }
     }
 }

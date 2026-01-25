@@ -26,7 +26,9 @@ import java.lang.reflect.Method;
 import java.util.Map;
 
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
-import io.modelcontextprotocol.spec.McpSchema.*;
+import io.modelcontextprotocol.sdk.CallToolRequest;
+import io.modelcontextprotocol.sdk.CallToolResult;
+import io.modelcontextprotocol.sdk.TextContent;
 
 // Minimal tool handler adapter, wraps annotated method as a Reactor-based handler
 public class ToolHandler {

@@ -1,6 +1,7 @@
 package io.github.fastmcp.scanner;
 
 import io.github.fastmcp.annotations.*;
+import io.github.fastmcp.annotations.WithProgress;
 import io.github.fastmcp.model.*;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -48,8 +49,9 @@ public class AnnotationScanner {
         McpTool ann = method.getAnnotation(McpTool.class);
         String name = ann.name().isEmpty() ? method.getName() : ann.name();
         boolean async = method.isAnnotationPresent(McpAsync.class);
+        boolean progressEnabled = method.isAnnotationPresent(WithProgress.class);
 
-        return new ToolMeta(name, ann.description(), method, async);
+        return new ToolMeta(name, ann.description(), method, async, progressEnabled);
     }
 
     private ResourceMeta toResourceMeta(Method method) {

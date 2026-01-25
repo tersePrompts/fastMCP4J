@@ -26,19 +26,20 @@ class ModelTest {
     @Test
     void testToolMetaImmutability() throws Exception {
         Method method = String.class.getMethod("toString");
-        ToolMeta meta = new ToolMeta("test", "desc", method, false);
+        ToolMeta meta = new ToolMeta("test", "desc", method, false, false);
 
         assertEquals("test", meta.getName());
         assertEquals("desc", meta.getDescription());
         assertEquals(method, meta.getMethod());
         assertFalse(meta.isAsync());
+        assertFalse(meta.isProgressEnabled());
     }
 
     @Test
     void testEqualsAndHashCode() throws Exception {
         Method method = String.class.getMethod("toString");
-        ToolMeta meta1 = new ToolMeta("test", "desc", method, false);
-        ToolMeta meta2 = new ToolMeta("test", "desc", method, false);
+        ToolMeta meta1 = new ToolMeta("test", "desc", method, false, false);
+        ToolMeta meta2 = new ToolMeta("test", "desc", method, false, false);
 
         assertEquals(meta1, meta2);
         assertEquals(meta1.hashCode(), meta2.hashCode());
