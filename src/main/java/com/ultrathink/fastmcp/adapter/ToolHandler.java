@@ -7,6 +7,7 @@ import com.ultrathink.fastmcp.model.ToolMeta;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import reactor.core.publisher.Mono;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -128,6 +129,7 @@ public class ToolHandler {
      */
     private void cleanupContext() {
         ContextImpl.clearCurrentContext();
+        com.ultrathink.fastmcp.core.FastMCP.clearTransportContext();
     }
     
     private String getSessionId(McpAsyncServerExchange exchange) {
@@ -142,8 +144,16 @@ public class ToolHandler {
     }
     
     private Map<String, Object> getMetadata(McpAsyncServerExchange exchange) {
-        // Extract metadata from exchange
-        return Map.of(); // TODO: Extract actual metadata
+        // Try to get headers from transport context (for HTTP transports)
+        Map<String, String> transportCtx = com.ultrathink.fastmcp.core.FastMCP.getTransportContext();
+        if (transportCtx != null && !transportCtx.isEmpty()) {
+            Map<String, Object> meta = new HashMap<>();
+            meta.put("headers", new HashMap<>(transportCtx));
+            // Also add headers directly for convenience
+            meta.putAll(transportCtx);
+            return meta;
+        }
+        return Map.of();
     }
     
     /**

@@ -46,6 +46,9 @@ public final class FastMCP {
     private final SchemaGenerator schemaGenerator = new SchemaGenerator();
     private String serverName;
 
+    /** ThreadLocal to store transport context (headers) for current request */
+    private static final ThreadLocal<Map<String, String>> TRANSPORT_CONTEXT = new ThreadLocal<>();
+
     private TransportType transport = TransportType.STDIO;
     private int port = 8080;
     private String mcpUri = "/mcp";
@@ -274,8 +277,23 @@ public final class FastMCP {
     }
 
     private static McpTransportContext extractContext(HttpServletRequest req) {
-        return McpTransportContext.create(Collections.list(req.getHeaderNames()).stream()
-                .collect(Collectors.toMap(Function.identity(), req::getHeader, (a, b) -> a)));
+        Map<String, String> headers = Collections.list(req.getHeaderNames()).stream()
+                .collect(Collectors.toMap(Function.identity(), req::getHeader, (a, b) -> a));
+        // Store in ThreadLocal for access in ToolHandler
+        TRANSPORT_CONTEXT.set(headers);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> headersAsObject = (Map<String, Object>) (Map<?, ?>) headers;
+        return McpTransportContext.create(headersAsObject);
+    }
+
+    /** Get the current transport context (headers) from ThreadLocal */
+    public static Map<String, String> getTransportContext() {
+        return TRANSPORT_CONTEXT.get();
+    }
+
+    /** Clear the current transport context */
+    public static void clearTransportContext() {
+        TRANSPORT_CONTEXT.remove();
     }
 
     @SuppressWarnings("unchecked")

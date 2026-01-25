@@ -165,6 +165,24 @@ public class ContextImpl implements Context {
         public String getSessionId() { return sessionId; }
         public String getTransport() { return transport; }
         public Map<String, Object> getMeta() { return meta; }
+
+        /** Get HTTP headers from the request (for HTTP transports) */
+        @SuppressWarnings("unchecked")
+        public Map<String, String> getHeaders() {
+            // Headers are stored in meta as Map<String, String>
+            Object headers = meta.get("headers");
+            if (headers instanceof Map) {
+                return (Map<String, String>) headers;
+            }
+            // Search for any header-like entries in meta
+            Map<String, String> result = new HashMap<>();
+            for (Map.Entry<String, Object> entry : meta.entrySet()) {
+                if (entry.getValue() instanceof String) {
+                    result.put(entry.getKey(), (String) entry.getValue());
+                }
+            }
+            return result;
+        }
     }
     
     /**
