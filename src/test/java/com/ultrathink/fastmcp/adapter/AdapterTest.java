@@ -87,7 +87,8 @@ class AdapterTest {
             server,
             toolMeta,
             new ArgumentBinder(),
-            new ResponseMarshaller()
+            new ResponseMarshaller(),
+            "test-server"
         );
         
         Map<String, Object> args = new HashMap<>();
@@ -117,7 +118,8 @@ class AdapterTest {
             server,
             toolMeta,
             new ArgumentBinder(),
-            new ResponseMarshaller()
+            new ResponseMarshaller(),
+            "test-server"
         );
         
         Map<String, Object> args = new HashMap<>();
@@ -148,7 +150,8 @@ class AdapterTest {
             server,
             toolMeta,
             new ArgumentBinder(),
-            new ResponseMarshaller()
+            new ResponseMarshaller(),
+            "test-server"
         );
         
         // Missing required primitive argument should cause error

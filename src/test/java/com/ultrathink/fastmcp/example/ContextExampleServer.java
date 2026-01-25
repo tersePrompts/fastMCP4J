@@ -1,11 +1,11 @@
 package com.ultrathink.fastmcp.example;
 
 import com.ultrathink.fastmcp.annotations.McpAsync;
-import com.ultrathink.fastmcp.annotations.McpContext;
 import com.ultrathink.fastmcp.annotations.McpServer;
 import com.ultrathink.fastmcp.annotations.McpTool;
 import com.ultrathink.fastmcp.context.Context;
 import com.ultrathink.fastmcp.context.ContextImpl;
+import com.ultrathink.fastmcp.context.McpContext;
 import com.ultrathink.fastmcp.core.FastMCP;
 import reactor.core.publisher.Mono;
 

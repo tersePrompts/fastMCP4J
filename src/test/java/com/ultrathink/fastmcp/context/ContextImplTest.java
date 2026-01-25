@@ -32,24 +32,24 @@ class ContextImplTest {
         
         notificationHelper = new ContextImpl.NotificationHelper() {
             private final List<String> logs = new ArrayList<>();
-            private final List<String> progress = new ArrayList<>();
+            private final List<String> progressList = new ArrayList<>();
             private final List<String> resources = new ArrayList<>();
-            
+
             @Override
             public void sendLog(String level, String message) {
                 logs.add("[" + level + "] " + message);
                 System.err.println("[TEST LOG] " + level + ": " + message);
             }
-            
+
             @Override
             public void sendProgress(double progress, double total, String message) {
-                String p = message != null ? 
-                    progress + "/" + total + ": " + message : 
+                String p = message != null ?
+                    progress + "/" + total + ": " + message :
                     progress + "/" + total;
-                progress.add(p);
+                progressList.add(p);
                 System.err.println("[TEST PROGRESS] " + p);
             }
-            
+
             @Override
             public void sendResourceChange(String action, String uri) {
                 resources.add(action + ": " + uri);

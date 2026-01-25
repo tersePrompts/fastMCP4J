@@ -112,22 +112,14 @@ public class ToolHandler {
     }
     
     private String getSessionId(McpAsyncServerExchange exchange) {
-        // Try to get session ID from exchange
-        // This may return null if session not established yet
-        try {
-            String sessionId = exchange.getSessionId();
-            return sessionId != null ? sessionId : "default-" + Thread.currentThread().getId();
-        } catch (Exception e) {
-            return "default-" + Thread.currentThread().getId();
-        }
+        // Generate session ID based on thread
+        // TODO: Once MCP SDK provides session ID access, use exchange.getSessionId()
+        return "session-" + Thread.currentThread().getId();
     }
     
     private String getClientId(McpAsyncServerExchange exchange) {
-        try {
-            return exchange.getClientId();
-        } catch (Exception e) {
-            return null;
-        }
+        // TODO: Once MCP SDK provides client ID access, use exchange.getClientId()
+        return "client-unknown";
     }
     
     private Map<String, Object> getMetadata(McpAsyncServerExchange exchange) {
@@ -158,7 +150,7 @@ public class ToolHandler {
         };
     }
 
-    private McpSchema.CallToolResult errorResult(Exception e) {
+    private McpSchema.CallToolResult errorResult(Throwable e) {
         return McpSchema.CallToolResult.builder()
             .content(List.of(new McpSchema.TextContent(e.getMessage())))
             .isError(true)
