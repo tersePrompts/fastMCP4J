@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "echo": {
+      "transport": {
+        "type": "http_streamable",
+        "url": "http://localhost:3002/mcp",
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "capabilities": {
+        "tools": true,
+        "resources": true,
+        "prompts": true,
+        "logging": true,
+        "completions": true
+      }
+    }
+  }
+}

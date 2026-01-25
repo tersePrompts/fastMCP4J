@@ -23,24 +23,171 @@ public class FileWriteTool {
     private static final int MAX_LINES = 100000; // Max lines to write
 
     /**
-     * Write content to a file (create or overwrite).
+     * Unified file operations tool with multiple modes.
      *
-     * @param path The path to write to
-     * @param content The content to write
-     * @param createParents Whether to create parent directories if they don't exist
-     * @return FileWriteResult with operation details
+     * @param mode The operation mode to perform
+     * @param path Required for all modes - the file/directory path
+     * @param content Required for writeFile/appendFile modes
+     * @param lines Required for writeLines/appendLines modes
+     * @param createParents Optional - create parent directories
+     * @param createIfMissing Optional - create file if it doesn't exist (for append modes)
+     * @return FileWriteResult or String message depending on mode
      */
-    @McpTool(name = "write_file", description = "Write content to a file (creates or overwrites)")
-    public FileWriteResult writeFile(
-        @McpParam(description = "The path to the file", required = true)
+    @McpTool(
+        name = "filewrite",
+        description = """
+            Unified file operations tool supporting multiple modes:
+            - writeFile: Write content to a file (creates or overwrites)
+            - appendFile: Append content to an existing file
+            - writeLines: Write a list of lines to a file (creates or overwrites)
+            - appendLines: Append a list of lines to an existing file
+            - deleteFile: Delete a file
+            - createDirectory: Create a directory
+
+            This tool provides safe file operations with built-in validation,
+            size limits, and directory traversal protection.
+            """
+    )
+    public Object filewrite(
+        // Mode parameter
+        @McpParam(
+            description = """
+                The operation mode to perform. Each mode has specific parameter requirements:
+                - writeFile: Writes content to file (creates new or overwrites existing)
+                - appendFile: Appends content to the end of an existing file
+                - writeLines: Writes an array of lines to file (creates new or overwrites)
+                - appendLines: Appends an array of lines to the end of an existing file
+                - deleteFile: Permanently deletes the specified file
+                - createDirectory: Creates a new directory at the specified path
+                """,
+            examples = {"writeFile", "appendFile", "writeLines", "appendLines", "deleteFile", "createDirectory"},
+            constraints = "Must be one of the valid mode values",
+            hints = "Choose the mode that best matches your intended operation. Use writeFile/appendFile for string content, writeLines/appendLines for array of strings."
+        )
+        String mode,
+
+        // Path parameter (required for all modes)
+        @McpParam(
+            description = """
+                The file system path to operate on. This can be an absolute path or relative to current working directory.
+                The path will be validated and normalized before use.
+                """,
+            examples = {
+                "/home/user/documents/file.txt",
+                "./data/output.json",
+                "C:\\\\Users\\\\username\\\\Documents\\\\file.txt",
+                "/var/log/app.log"
+            },
+            constraints = "Must be a valid file system path. Directory traversal (..) is not allowed.",
+            hints = "Use forward slashes on Unix/Mac and backslashes on Windows, or use forward slashes universally which work on all platforms."
+        )
         String path,
 
-        @McpParam(description = "The content to write", required = true)
+        // Content parameter (required for writeFile/appendFile modes)
+        @McpParam(
+            description = """
+                The text content to write to or append to the file. Used only with writeFile and appendFile modes.
+                For writeLines/appendLines modes, use the 'lines' parameter instead.
+                """,
+            examples = {
+                "Hello, World!",
+                "{\"name\": \"John\", \"age\": 30}",
+                "Line 1\\nLine 2\\nLine 3",
+                "import java.util.*;\n\npublic class Test { }"
+            },
+            constraints = "Maximum content size is 10MB. Must be valid UTF-8 text.",
+            hints = "Include proper line breaks (\\n) if you want multi-line content. Use writeLines mode for better control over individual lines.",
+            required = false
+        )
         String content,
 
-        @McpParam(description = "Create parent directories if they don't exist", required = false)
-        Boolean createParents
+        // Lines parameter (required for writeLines/appendLines modes)
+        @McpParam(
+            description = """
+                Array of text lines to write to or append to the file. Used only with writeLines and appendLines modes.
+                Each element in the array will be written as a separate line.
+                """,
+            examples = {
+                "[\"Line 1\", \"Line 2\", \"Line 3\"]",
+                "[\"{\"name\": \"John\"}\", \"{\"name\": \"Jane\"}\"]",
+                "[\"# Header\", \"## Subheader\", \"Content here\"]"
+            },
+            constraints = "Maximum 100,000 lines. Each line is treated as a separate string.",
+            hints = "Lines will be joined with newline separators and automatically have a trailing newline added. Use this for structured data or when you need individual line control.",
+            required = false
+        )
+        List<String> lines,
+
+        // Create parents parameter (optional for writeFile/writeLines/createDirectory modes)
+        @McpParam(
+            description = """
+                Whether to create parent directories if they don't exist. Applies to writeFile, writeLines, and createDirectory modes.
+                When true, all missing parent directories in the path will be created automatically.
+                """,
+            examples = {"true", "false"},
+            constraints = "Must be a boolean value (true or false)",
+            hints = "Set to true when writing to nested directories that may not exist yet. Useful for creating directory structures in one operation.",
+            required = false
+        )
+        Boolean createParents,
+
+        // Create if missing parameter (optional for appendFile/appendLines modes)
+        @McpParam(
+            description = """
+                Whether to create the file if it doesn't exist. Applies only to appendFile and appendLines modes.
+                When true, the file will be created if it doesn't exist, then content will be appended.
+                When false, the operation will fail if the file doesn't exist.
+                """,
+            examples = {"true", "false"},
+            constraints = "Must be a boolean value (true or false). Only used with append modes.",
+            hints = "Use true when you want to ensure content is added even if the file is new. Use false to strictly append to existing files only.",
+            required = false
+        )
+        Boolean createIfMissing
     ) {
+        // Validate mode parameter
+        if (mode == null || mode.trim().isEmpty()) {
+            throw new FileWriteException("Mode parameter is required");
+        }
+
+        // Route to appropriate method based on mode
+        switch (mode) {
+            case "writeFile":
+                return handleWriteFile(path, content, createParents);
+
+            case "appendFile":
+                return handleAppendFile(path, content, createIfMissing);
+
+            case "writeLines":
+                return handleWriteLines(path, lines, createParents);
+
+            case "appendLines":
+                return handleAppendLines(path, lines, createIfMissing);
+
+            case "deleteFile":
+                return handleDeleteFile(path);
+
+            case "createDirectory":
+                return handleCreateDirectory(path, createParents);
+
+            default:
+                throw new FileWriteException(
+                    "Invalid mode: " + mode + ". Must be one of: writeFile, appendFile, writeLines, appendLines, deleteFile, createDirectory"
+                );
+        }
+    }
+
+    /**
+     * Handle writeFile mode.
+     */
+    private FileWriteResult handleWriteFile(String path, String content, Boolean createParents) {
+        if (path == null || path.trim().isEmpty()) {
+            throw new FileWriteException("Path parameter is required for writeFile mode");
+        }
+        if (content == null) {
+            throw new FileWriteException("Content parameter is required for writeFile mode");
+        }
+
         Path filePath = validateAndNormalizePath(path);
         boolean shouldCreateParents = createParents != null && createParents;
 
@@ -61,8 +208,8 @@ public class FileWriteTool {
             // Write the file
             Files.write(filePath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
-            int lines = content.split("\n").length;
-            return new FileWriteResult(path, bytes.length, lines, "write", !fileExisted);
+            int lineCount = content.split("\n").length;
+            return new FileWriteResult(path, bytes.length, lineCount, "write", !fileExisted);
 
         } catch (IOException e) {
             throw new FileWriteException("Failed to write file: " + e.getMessage(), e);
@@ -70,24 +217,16 @@ public class FileWriteTool {
     }
 
     /**
-     * Append content to a file.
-     *
-     * @param path The path to append to
-     * @param content The content to append
-     * @param createIfMissing Whether to create the file if it doesn't exist
-     * @return FileWriteResult with operation details
+     * Handle appendFile mode.
      */
-    @McpTool(name = "append_file", description = "Append content to a file")
-    public FileWriteResult appendFile(
-        @McpParam(description = "The path to the file", required = true)
-        String path,
+    private FileWriteResult handleAppendFile(String path, String content, Boolean createIfMissing) {
+        if (path == null || path.trim().isEmpty()) {
+            throw new FileWriteException("Path parameter is required for appendFile mode");
+        }
+        if (content == null) {
+            throw new FileWriteException("Content parameter is required for appendFile mode");
+        }
 
-        @McpParam(description = "The content to append", required = true)
-        String content,
-
-        @McpParam(description = "Create file if it doesn't exist", required = false)
-        Boolean createIfMissing
-    ) {
         Path filePath = validateAndNormalizePath(path);
         boolean shouldCreate = createIfMissing != null && createIfMissing;
 
@@ -120,8 +259,8 @@ public class FileWriteTool {
                 Files.write(filePath, bytes, StandardOpenOption.APPEND);
             }
 
-            int lines = content.split("\n").length;
-            return new FileWriteResult(path, bytes.length, lines, "append", !fileExisted);
+            int lineCount = content.split("\n").length;
+            return new FileWriteResult(path, bytes.length, lineCount, "append", !fileExisted);
 
         } catch (IOException e) {
             throw new FileWriteException("Failed to append to file: " + e.getMessage(), e);
@@ -129,24 +268,16 @@ public class FileWriteTool {
     }
 
     /**
-     * Write lines to a file.
-     *
-     * @param path The path to write to
-     * @param lines The lines to write
-     * @param createParents Whether to create parent directories
-     * @return FileWriteResult with operation details
+     * Handle writeLines mode.
      */
-    @McpTool(name = "write_lines", description = "Write lines to a file (creates or overwrites)")
-    public FileWriteResult writeLines(
-        @McpParam(description = "The path to the file", required = true)
-        String path,
+    private FileWriteResult handleWriteLines(String path, List<String> lines, Boolean createParents) {
+        if (path == null || path.trim().isEmpty()) {
+            throw new FileWriteException("Path parameter is required for writeLines mode");
+        }
+        if (lines == null || lines.isEmpty()) {
+            throw new FileWriteException("Lines parameter is required for writeLines mode");
+        }
 
-        @McpParam(description = "The lines to write", required = true)
-        List<String> lines,
-
-        @McpParam(description = "Create parent directories if they don't exist", required = false)
-        Boolean createParents
-    ) {
         if (lines.size() > MAX_LINES) {
             throw new FileWriteException("Number of lines exceeds maximum of " + MAX_LINES);
         }
@@ -156,28 +287,20 @@ public class FileWriteTool {
             content += "\n";
         }
 
-        return writeFile(path, content, createParents);
+        return handleWriteFile(path, content, createParents);
     }
 
     /**
-     * Append lines to a file.
-     *
-     * @param path The path to append to
-     * @param lines The lines to append
-     * @param createIfMissing Whether to create the file if missing
-     * @return FileWriteResult with operation details
+     * Handle appendLines mode.
      */
-    @McpTool(name = "append_lines", description = "Append lines to a file")
-    public FileWriteResult appendLines(
-        @McpParam(description = "The path to the file", required = true)
-        String path,
+    private FileWriteResult handleAppendLines(String path, List<String> lines, Boolean createIfMissing) {
+        if (path == null || path.trim().isEmpty()) {
+            throw new FileWriteException("Path parameter is required for appendLines mode");
+        }
+        if (lines == null || lines.isEmpty()) {
+            throw new FileWriteException("Lines parameter is required for appendLines mode");
+        }
 
-        @McpParam(description = "The lines to append", required = true)
-        List<String> lines,
-
-        @McpParam(description = "Create file if it doesn't exist", required = false)
-        Boolean createIfMissing
-    ) {
         if (lines.size() > MAX_LINES) {
             throw new FileWriteException("Number of lines exceeds maximum of " + MAX_LINES);
         }
@@ -187,20 +310,17 @@ public class FileWriteTool {
             content += "\n";
         }
 
-        return appendFile(path, content, createIfMissing);
+        return handleAppendFile(path, content, createIfMissing);
     }
 
     /**
-     * Delete a file.
-     *
-     * @param path The path to delete
-     * @return Success message
+     * Handle deleteFile mode.
      */
-    @McpTool(name = "delete_file", description = "Delete a file")
-    public String deleteFile(
-        @McpParam(description = "The path to the file", required = true)
-        String path
-    ) {
+    private String handleDeleteFile(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            throw new FileWriteException("Path parameter is required for deleteFile mode");
+        }
+
         Path filePath = validateAndNormalizePath(path);
 
         if (!Files.exists(filePath)) {
@@ -220,20 +340,13 @@ public class FileWriteTool {
     }
 
     /**
-     * Create a directory.
-     *
-     * @param path The directory path to create
-     * @param createParents Whether to create parent directories
-     * @return Success message
+     * Handle createDirectory mode.
      */
-    @McpTool(name = "create_directory", description = "Create a directory")
-    public String createDirectory(
-        @McpParam(description = "The path to the directory", required = true)
-        String path,
+    private String handleCreateDirectory(String path, Boolean createParents) {
+        if (path == null || path.trim().isEmpty()) {
+            throw new FileWriteException("Path parameter is required for createDirectory mode");
+        }
 
-        @McpParam(description = "Create parent directories if they don't exist", required = false)
-        Boolean createParents
-    ) {
         Path dirPath = validateAndNormalizePath(path);
         boolean shouldCreateParents = createParents != null && createParents;
 

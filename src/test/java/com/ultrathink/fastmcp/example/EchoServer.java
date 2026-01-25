@@ -43,8 +43,8 @@ import java.util.Map;
     version = "3.0.0",
     instructions = "Comprehensive FastMCP4J demo server with all features enabled",
     icons = {
-        "https://example.com/server-icon.png:image/png:64x64:light",
-        "https://example.com/server-icon-dark.png:image/png:64x64:dark"
+        "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM0Qzc5RkYiLz4KPHBhdGggZD0iTTMyIDE2QzIzLjE2MzQgMTYgMTYgMjMuMTYzNCAxNiAzMkMxNiA0MC44MzY2IDIzLjE2MzQgNDggMzIgNDhDMzguNjQ1IDQ4IDQ0LjM0MjIgNDQuMTM1NiA0Ny4xNDI4IDM4LjgzNDRMNTQuMjg1NiA0Ni45NzkyQzUwLjQxMTQgNTQuODUzMiA0MS44MzYgNjAgMzIgNjBDMjAuOTU0MyA2MCAxMiA1MS4wNDU3IDEyIDQwQzEyIDMzLjM2NDkgMTUuODY0NCAyNy42NTc4IDIxLjE2NTYgMjQuODU3MkwxMy4wMjA4IDE3LjcxNDlDMTYuODk1IDkuODM2MDkgMjUuNDcwNSA0IDMyIDRDNDMuMDQ1NyA0IDUyIDEyLjk1NDMgNTIgMjRDNTIgMzAuNjM1MSA0OC4xMzU2IDM2LjM0MjIgNDIuODM0NCAzOS4xNDI4TDUwLjk3OTIgNDYuOTc5MkM0Ny4xMDUgNTQuODU3MSAzOC41Mjk1IDYwIDMyIDYwQzIwLjk1NDMgNjAgMTIgNTEuMDQ1NyAxMiA0MEMxMiAzMy4zNjQ5IDE1Ljg2NDQgMjcuNjU3OCAyMS4xNjU2IDI0Ljg1NzJMMzIgMTZaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4=:image/svg+xml:64x64:light",
+        "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMxRTI5M0IiLz4KPHBhdGggZD0iTTMyIDE2QzIzLjE2MzQgMTYgMTYgMjMuMTYzNCAxNiAzMkMxNiA0MC44MzY2IDIzLjE2MzQgNDggMzIgNDhDMzguNjQ1IDQ4IDQ0LjM0MjIgNDQuMTM1NiA0Ny4xNDI4IDM4LjgzNDRMNTQuMjg1NiA0Ni45NzkyQzUwLjQxMTQgNTQuODUzMiA0MS44MzYgNjAgMzIgNjBDMjAuOTU0MyA2MCAxMiA1MS4wNDU3IDEyIDQwQzEyIDMzLjM2NDkgMTUuODY0NCAyNy42NTc4IDIxLjE2NTYgMjQuODU3MkwxMy4wMjA4IDE3LjcxNDlDMTYuODk1IDkuODM2MDkgMjUuNDcwNSA0IDMyIDRDNDMuMDQ1NyA0IDUyIDEyLjk1NDMgNTIgMjRDNTIgMzAuNjM1MSA0OC4xMzU2IDM2LjM0MjIgNDIuODM0NCAzOS4xNDI4TDUwLjk3OTIgNDYuOTc5MkM0Ny4xMDUgNTQuODU3MSAzOC41Mjk1IDYwIDMyIDYwQzIwLjk1NDMgNjAgMTIgNTEuMDQ1NyAxMiA0MEMxMiAzMy4zNjQ5IDE1Ljg2NDQgMjcuNjU3OCAyMS4xNjU2IDI0Ljg1NzJMMzIgMTZaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4=:image/svg+xml:64x64:dark"
     }
 )
 @McpMemory      // Enables: memory tool for persistent storage
@@ -75,7 +75,7 @@ public class EchoServer {
 
     @McpTool(
         description = "Echo back the message with timestamp",
-        icons = {"https://example.com/echo-icon.png:image/png:32x32"}
+        icons = {"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzg5REZGMyIvPgo8cGF0aCBkPSJNMTYgOEMxMi42ODY2IDggMTAgMTAuNjg2NiAxMCAxNEMxMCAxNy4zMTM0IDEyLjY4NjYgMjAgMTYgMjBDMTkuMzEzNCAyMCAyMiAxNy4zMTM0IDIyIDE0QzIyIDEwLjY4NjYgMTkuMzEzNCA4IDE2IDhaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTYgMTJDMTQuODk1NCAxMiAxNCAxMi44OTU0IDE0IDE0QzE0IDE1LjEwNDYgMTQuODk1NCAxNiAxNiAxNkMxNy4xMDQ2IDE2IDE4IDE1LjEwNDYgMTggMTRDMTggMTIuODk1NCAxNy4xMDQ2IDEyIDE2IDEyWiIgZmlsbD0iIzg5REZGMyIvPgo8L3N2Zz4=:image/svg+xml:32x32"}
     )
     public String echo(
         @McpParam(
@@ -92,7 +92,7 @@ public class EchoServer {
 
     @McpTool(
         description = "Perform arithmetic calculations",
-        icons = {"https://example.com/calc-icon.png:image/png:32x32"}
+        icons = {"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iI0Y1OUEyMyIvPgo8cGF0aCBkPSJNMTAgMTBIMTRWMTRIMTBWMTBaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTggMThIMjJWMjJIMThWMThaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTAgMThIMTRWMjJIMTBWMThaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTggMTBIMjJWMTRIMThWMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4=:image/svg+xml:32x32"}
     )
     public double calculate(
         @McpParam(
@@ -129,7 +129,7 @@ public class EchoServer {
 
     @McpTool(
         description = "Process task with progress reporting using Context",
-        icons = {"https://example.com/progress-icon.png:image/png:32x32"}
+        icons = {"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzEwQjk4MSIvPgo8Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSI4IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIGZpbGw9Im5vbmUiLz4KPHBhdGggZD0iTTE2IDE2VjEyIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4=:image/svg+xml:32x32"}
     )
     public String processWithProgress(
         @McpParam(description = "Number of steps", examples = {"10", "100"})
@@ -158,7 +158,7 @@ public class EchoServer {
 
     @McpTool(
         description = "Async task with progress reporting",
-        icons = {"https://example.com/async-icon.png:image/png:32x32"}
+        icons = {"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzg0NDU5OSIvPgo8cGF0aCBkPSJNMTYgOEMxMS41ODE3IDggOCAxMS41ODE3IDggMTZDOCAyMC40MTgzIDExLjU4MTcgMjQgMTYgMjRDMjAuNDE4MyAyNCAyNCAyMC40MTgzIDI0IDE2QzI0IDExLjU4MTcgMjAuNDE4MyA4IDE2IDhaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTYgMTJWMjAiIHN0cm9rZT0iIzg0NDU5OSIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KPHAJdGggZD0iTTE2IDEyTDIwIDE2TDE2IDIwTDEyIDE2TDE2IDEyWiIgZmlsbD0iIzg0NDU5OSIvPgo8L3N2Zz4=:image/svg+xml:32x32"}
     )
     @McpAsync
     public Mono<String> asyncTask(

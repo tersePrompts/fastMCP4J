@@ -41,31 +41,255 @@ public class PlannerTool {
     }
 
     /**
-     * Create a new execution plan.
+     * Unified planner tool for managing execution plans and tasks.
+     * <p>
+     * This single tool provides all planning operations through the mode parameter.
+     * Each mode has specific parameters that are only relevant for that operation.
      */
-    @McpTool(description = "Create a new plan for decomposing a complex task into smaller steps")
-    public String createPlan(
-        @McpParam(
-            description = "The plan name/title",
-            examples = {"Build REST API", "Migrate database", "Implement authentication"},
-            constraints = "Cannot be empty"
-        )
-        String name,
+    @McpTool(description = """
+        Unified planner tool for managing execution plans and hierarchical tasks.
+        Supports creating plans, adding tasks/subtasks, updating status, tracking progress,
+        and managing complex multi-step workflows with dependencies.
 
+        Available modes:
+        - createPlan: Create a new plan with optional initial tasks
+        - listPlans: List all available plans with status summaries
+        - getPlan: Get detailed view of a specific plan with full task hierarchy
+        - addTask: Add a new root-level task to an existing plan
+        - addSubtask: Add a subtask to break down a task into smaller steps
+        - updateTask: Update the status of a task (pending, in_progress, completed, failed, blocked)
+        - getNextTask: Get the next pending task that can be executed (all dependencies complete)
+        - deletePlan: Delete a plan and all its tasks
+        """)
+    public String planner(
+        // Mode parameter (always required)
         @McpParam(
-            description = "Detailed description of what the plan aims to accomplish",
-            examples = {"Implement user management with CRUD operations", "Migrate from PostgreSQL to MongoDB"},
-            constraints = "Should explain the goal and context"
-        )
-        String description,
+            description = """
+                Operation mode to perform. Each mode has specific parameters:
 
+                1. createPlan - Creates a new execution plan for decomposing complex tasks
+                2. listPlans - Lists all available plans with status and progress
+                3. getPlan - Retrieves detailed plan information with full task hierarchy
+                4. addTask - Adds a new task to an existing plan
+                5. addSubtask - Adds a subtask to break down a parent task
+                6. updateTask - Updates the status of an existing task
+                7. getNextTask - Gets the next executable pending task
+                8. deletePlan - Deletes a plan and all its tasks
+                """,
+            examples = {"createPlan", "addTask", "updateTask", "getNextTask"},
+            constraints = "Must be one of: createPlan, listPlans, getPlan, addTask, addSubtask, updateTask, getNextTask, deletePlan",
+            hints = "Choose the mode that best matches your current objective. For example: use 'createPlan' to start a new project, 'addTask' to add steps, 'getNextTask' to get work, 'updateTask' to mark progress."
+        )
+        String mode,
+
+        // Common parameters (planId, taskId) - used by multiple modes
         @McpParam(
-            description = "Initial root-level tasks as a list. Each task is a JSON object with 'title', 'description', and optionally 'execution_type' and 'dependencies'",
-            examples = {"[{\"title\": \"Setup project structure\", \"description\": \"Create directories and files\"}, {\"title\": \"Implement API endpoints\", \"description\": \"CRUD operations\", \"execution_type\": \"sequential\"}]"},
+            description = """
+                Plan identifier - required for: getPlan, addTask, addSubtask, updateTask, getNextTask, deletePlan.
+                Get this from the createPlan response or listPlans output.
+                """,
+            examples = {"abc12345-def67-89012", "plan-2024-rest-api", "xyz98765"},
+            constraints = "Must be a valid plan ID that exists in the system",
+            hints = "Copy the plan ID from the output of createPlan() or listPlans()",
             required = false
         )
-        List<String> initialTasks
+        String planId,
+
+        @McpParam(
+            description = """
+                Task identifier - required for: addSubtask, updateTask.
+                Get this from the addTask response or getPlan output.
+                """,
+            examples = {"task-001", "task-auth-setup", "abc-def-123"},
+            constraints = "Must be a valid task ID that exists within the specified plan",
+            hints = "Copy the task ID from the output of addTask() or getPlan()",
+            required = false
+        )
+        String taskId,
+
+        // createPlan mode parameters
+        @McpParam(
+            description = """
+                [createPlan mode] Plan name/title - short descriptive name for the plan.
+                Should clearly indicate what the plan accomplishes.
+                """,
+            examples = {"Build REST API", "Migrate database to MongoDB", "Implement authentication system", "Deploy microservices to K8s"},
+            constraints = "Cannot be empty or null. Should be concise but descriptive (2-10 words recommended)",
+            hints = "Use a clear, actionable name that describes the overall goal. Example: 'Implement user authentication with JWT' rather than 'Auth'",
+            required = false
+        )
+        String planName,
+
+        @McpParam(
+            description = """
+                [createPlan mode] Detailed description of the plan's objectives and context.
+                Explain what the plan aims to accomplish and any important background.
+                """,
+            examples = {
+                "Implement user management with CRUD operations, password hashing, and JWT authentication",
+                "Migrate user data from PostgreSQL to MongoDB including schema transformation and data validation",
+                "Create a complete REST API for product catalog with search, filtering, and pagination"
+            },
+            constraints = "Should explain the goal, scope, and context. 1-5 sentences recommended",
+            hints = "Provide enough context for someone to understand what success looks like. Include technical details, constraints, or requirements if relevant",
+            required = false
+        )
+        String planDescription,
+
+        @McpParam(
+            description = """
+                [createPlan mode] Initial root-level tasks as a list of JSON objects.
+                Each task must have 'title', and may include 'description', 'execution_type' ('sequential' or 'parallel'), and 'dependencies' (array of task IDs).
+
+                Example: [{"title": "Setup database", "description": "Configure PostgreSQL"}, {"title": "Build API", "execution_type": "parallel"}]
+                """,
+            examples = {
+                "[{\"title\": \"Setup project structure\", \"description\": \"Create directories and config files\"}]",
+                "[{\"title\": \"Design schema\", \"description\": \"Plan database tables\"}, {\"title\": \"Implement models\", \"description\": \"Create data models\", \"execution_type\": \"sequential\"}]",
+                "[{\"title\": \"Setup frontend\", \"execution_type\": \"parallel\"}, {\"title\": \"Setup backend\", \"execution_type\": \"parallel\"}]"
+            },
+            constraints = "Must be valid JSON array. Each task must have at least a 'title' field",
+            hints = "Start with 3-7 major tasks. You can always add more tasks later with addTask mode. Break down complex tasks into subtasks later using addSubtask mode",
+            required = false
+        )
+        List<String> initialTasks,
+
+        // addTask mode parameters
+        @McpParam(
+            description = """
+                [addTask mode] Task title - a short, clear description of what the task does.
+                Should be action-oriented and specific.
+                """,
+            examples = {"Setup PostgreSQL database", "Write unit tests for API", "Deploy to staging environment", "Configure authentication middleware"},
+            constraints = "Cannot be empty. Should be 2-10 words. Use verb-noun format (e.g., 'Implement user login')",
+            hints = "Be specific enough that someone knows what to do. 'Fix bug' is too vague; 'Fix authentication token expiration bug' is better",
+            required = false
+        )
+        String taskTitle,
+
+        @McpParam(
+            description = """
+                [addTask mode] Detailed task description with context, requirements, and acceptance criteria.
+                """,
+            examples = {
+                "Configure PostgreSQL connection pool with max 20 connections, 5 min idle, and 30 second timeout",
+                "Write comprehensive unit tests for all REST API endpoints covering success and error cases",
+                "Deploy the application to staging environment using Docker Compose and verify health checks"
+            },
+            constraints = "Should provide enough detail to execute the task. 1-5 sentences recommended",
+            hints = "Include technical details, requirements, file paths, or acceptance criteria. The more specific, the better",
+            required = false
+        )
+        String taskDescription,
+
+        @McpParam(
+            description = """
+                [addTask mode] Execution type determining if this task's subtasks run sequentially or in parallel.
+                - sequential: Subtasks run one after another (default, safer)
+                - parallel: Subtasks can run simultaneously (faster, requires independence)
+                """,
+            examples = {"sequential", "parallel"},
+            constraints = "Must be either 'sequential' or 'parallel'. Default is 'sequential'",
+            hints = "Use 'parallel' only when subtasks are independent and can run simultaneously without conflicts. Use 'sequential' when order matters or there are dependencies",
+            required = false
+        )
+        String executionType,
+
+        @McpParam(
+            description = """
+                [addTask mode] List of task IDs that must complete before this task can start.
+                Used to create task dependencies and enforce execution order.
+                """,
+            examples = {"[\"task-001\", \"task-002\"]", "[\"setup-db\"]", "[]"},
+            constraints = "All task IDs must exist in the same plan. Cannot create circular dependencies",
+            hints = "Only list direct dependencies. For example, if task C depends on B which depends on A, only list B in C's dependencies, not A. Get task IDs from getPlan() output",
+            required = false
+        )
+        List<String> dependencies,
+
+        // addSubtask mode parameters
+        @McpParam(
+            description = """
+                [addSubtask mode] Parent task ID that this subtask belongs to.
+                The subtask will be nested under this parent task in the hierarchy.
+                """,
+            examples = {"task-001", "task-db-setup", "parent-task-abc"},
+            constraints = "Must be a valid task ID in the specified plan",
+            hints = "Get the parent task ID from getPlan() output. Subtasks are used to break down complex tasks into manageable steps",
+            required = false
+        )
+        String parentTaskId,
+
+        @McpParam(
+            description = """
+                [addSubtask mode] Subtask title - a short, clear description of the subtask.
+                Should represent a concrete step that contributes to completing the parent task.
+                """,
+            examples = {"Create database schema", "Write integration tests", "Verify deployment logs"},
+            constraints = "Cannot be empty. Should be 2-10 words. More granular than parent task titles",
+            hints = "Subtasks should be smaller and more focused than parent tasks. Each subtask should be completable in a focused work session",
+            required = false
+        )
+        String subtaskTitle,
+
+        @McpParam(
+            description = """
+                [addSubtask mode] Detailed subtask description with specific steps and requirements.
+                """,
+            examples = {
+                "Create users table with id, email, password_hash columns and unique constraint on email",
+                "Write tests for POST /users endpoint covering validation, authentication, and error handling",
+                "Check Kubernetes pod logs for errors and verify all services are running"
+            },
+            constraints = "Should provide concrete steps or technical details. 1-3 sentences recommended",
+            hints = "Be more specific than the parent task description. Include file names, function names, or exact commands when possible",
+            required = false
+        )
+        String subtaskDescription,
+
+        // updateTask mode parameters
+        @McpParam(
+            description = """
+                [updateTask mode] New task status indicating current progress state.
+
+                Status meanings:
+                - pending: Task is not started yet (default)
+                - in_progress: Currently being worked on
+                - completed: Task finished successfully
+                - failed: Task failed and needs attention
+                - blocked: Task cannot proceed due to dependencies or issues
+                """,
+            examples = {"completed", "in_progress", "failed", "blocked", "pending"},
+            constraints = "Must be one of: pending, in_progress, completed, failed, blocked",
+            hints = "Update status regularly to track progress. Move tasks from pending → in_progress → completed. Use 'blocked' if waiting on something, 'failed' if errors occur",
+            required = false
+        )
+        String status
     ) {
+        // Route to the appropriate handler based on mode
+        return switch (mode) {
+            case "createPlan" -> handleCreatePlan(planName, planDescription, initialTasks);
+            case "listPlans" -> handleListPlans();
+            case "getPlan" -> handleGetPlan(planId);
+            case "addTask" -> handleAddTask(planId, taskTitle, taskDescription, executionType, dependencies);
+            case "addSubtask" -> handleAddSubtask(planId, parentTaskId, subtaskTitle, subtaskDescription);
+            case "updateTask" -> handleUpdateTask(planId, taskId, status);
+            case "getNextTask" -> handleGetNextTask(planId);
+            case "deletePlan" -> handleDeletePlan(planId);
+            default -> throw new PlannerException(
+                "Invalid mode: " + mode + ". Valid modes are: createPlan, listPlans, getPlan, addTask, addSubtask, updateTask, getNextTask, deletePlan"
+            );
+        };
+    }
+
+    /**
+     * Handle createPlan mode - creates a new execution plan.
+     */
+    private String handleCreatePlan(String name, String description, List<String> initialTasks) {
+        if (name == null || name.isBlank()) {
+            throw new PlannerException("Plan name is required for createPlan mode. Provide planName parameter.");
+        }
+
         List<PlanStore.Task> tasks = new ArrayList<>();
         if (initialTasks != null) {
             for (String taskJson : initialTasks) {
@@ -77,18 +301,17 @@ public class PlannerTool {
         String planId = store.createPlan(name, description, tasks);
         return String.format("Created plan '%s' (ID: %s) with %d root task(s)%n%s",
             name, planId, tasks.size(),
-            tasks.isEmpty() ? "Use addTask() to add tasks." : "");
+            tasks.isEmpty() ? "Use addTask mode to add tasks." : "");
     }
 
     /**
-     * List all plans.
+     * Handle listPlans mode - lists all available plans.
      */
-    @McpTool(description = "List all available plans with their status and summary")
-    public String listPlans() {
+    private String handleListPlans() {
         List<PlanStore.Plan> plans = store.listPlans();
 
         if (plans.isEmpty()) {
-            return "No plans found. Use createPlan() to create a new plan.";
+            return "No plans found. Use planner with createPlan mode to create a new plan.";
         }
 
         StringBuilder sb = new StringBuilder();
@@ -103,16 +326,13 @@ public class PlannerTool {
     }
 
     /**
-     * Get details of a specific plan.
+     * Handle getPlan mode - retrieves detailed plan information.
      */
-    @McpTool(description = "Get detailed view of a plan including all tasks in hierarchy")
-    public String getPlan(
-        @McpParam(
-            description = "The plan ID to retrieve",
-            examples = {"abc12345", "def67890"}
-        )
-        String planId
-    ) {
+    private String handleGetPlan(String planId) {
+        if (planId == null || planId.isBlank()) {
+            throw new PlannerException("Plan ID is required for getPlan mode. Provide planId parameter.");
+        }
+
         PlanStore.Plan plan = store.getPlan(planId);
         if (plan == null) {
             throw new PlannerException("Plan not found: " + planId);
@@ -122,44 +342,16 @@ public class PlannerTool {
     }
 
     /**
-     * Add a new task to a plan.
+     * Handle addTask mode - adds a new task to a plan.
      */
-    @McpTool(description = "Add a new task to an existing plan")
-    public String addTask(
-        @McpParam(
-            description = "The plan ID to add the task to",
-            examples = {"abc12345", "def67890"}
-        )
-        String planId,
+    private String handleAddTask(String planId, String title, String description, String executionType, List<String> dependencies) {
+        if (planId == null || planId.isBlank()) {
+            throw new PlannerException("Plan ID is required for addTask mode. Provide planId parameter.");
+        }
+        if (title == null || title.isBlank()) {
+            throw new PlannerException("Task title is required for addTask mode. Provide taskTitle parameter.");
+        }
 
-        @McpParam(
-            description = "Task title (short description)",
-            examples = {"Setup database", "Write unit tests", "Deploy to staging"}
-        )
-        String title,
-
-        @McpParam(
-            description = "Detailed task description",
-            examples = {"Configure PostgreSQL connection", "Test all API endpoints"},
-            required = false
-        )
-        String description,
-
-        @McpParam(
-            description = "Execution type: 'sequential' or 'parallel'",
-            examples = {"sequential", "parallel"},
-            defaultValue = "sequential",
-            required = false
-        )
-        String executionType,
-
-        @McpParam(
-            description = "Task dependencies (list of task IDs that must complete first)",
-            examples = {"[\"task1\", \"task2\"]"},
-            required = false
-        )
-        List<String> dependencies
-    ) {
         PlanStore.TaskExecutionType execType = parseExecutionType(executionType);
 
         PlanStore.Task task = new PlanStore.Task(
@@ -179,35 +371,19 @@ public class PlannerTool {
     }
 
     /**
-     * Add a subtask to an existing task.
+     * Handle addSubtask mode - adds a subtask to a parent task.
      */
-    @McpTool(description = "Add a subtask to break down a task into smaller steps")
-    public String addSubtask(
-        @McpParam(
-            description = "The plan ID",
-            examples = {"abc12345"}
-        )
-        String planId,
+    private String handleAddSubtask(String planId, String parentTaskId, String title, String description) {
+        if (planId == null || planId.isBlank()) {
+            throw new PlannerException("Plan ID is required for addSubtask mode. Provide planId parameter.");
+        }
+        if (parentTaskId == null || parentTaskId.isBlank()) {
+            throw new PlannerException("Parent task ID is required for addSubtask mode. Provide parentTaskId parameter.");
+        }
+        if (title == null || title.isBlank()) {
+            throw new PlannerException("Subtask title is required for addSubtask mode. Provide subtaskTitle parameter.");
+        }
 
-        @McpParam(
-            description = "The parent task ID to add subtask to",
-            examples = {"task1", "task2"}
-        )
-        String parentTaskId,
-
-        @McpParam(
-            description = "Subtask title",
-            examples = {"Configure connection", "Write tests", "Verify output"}
-        )
-        String title,
-
-        @McpParam(
-            description = "Detailed subtask description",
-            examples = {"Setup database schema", "Test edge cases"},
-            required = false
-        )
-        String description
-    ) {
         PlanStore.Task subtask = new PlanStore.Task(
             null,
             title,
@@ -225,29 +401,19 @@ public class PlannerTool {
     }
 
     /**
-     * Update task status.
+     * Handle updateTask mode - updates task status.
      */
-    @McpTool(description = "Update the status of a task in a plan")
-    public String updateTask(
-        @McpParam(
-            description = "The plan ID",
-            examples = {"abc12345"}
-        )
-        String planId,
+    private String handleUpdateTask(String planId, String taskId, String status) {
+        if (planId == null || planId.isBlank()) {
+            throw new PlannerException("Plan ID is required for updateTask mode. Provide planId parameter.");
+        }
+        if (taskId == null || taskId.isBlank()) {
+            throw new PlannerException("Task ID is required for updateTask mode. Provide taskId parameter.");
+        }
+        if (status == null || status.isBlank()) {
+            throw new PlannerException("Status is required for updateTask mode. Provide status parameter.");
+        }
 
-        @McpParam(
-            description = "The task ID to update",
-            examples = {"task1", "task2"}
-        )
-        String taskId,
-
-        @McpParam(
-            description = "New status: 'pending', 'in_progress', 'completed', 'failed', or 'blocked'",
-            examples = {"completed", "in_progress", "failed"},
-            constraints = "Must be a valid status value"
-        )
-        String status
-    ) {
         PlanStore.TaskStatus newStatus = parseStatus(status);
         if (newStatus == null) {
             throw new PlannerException("Invalid status: " + status + ". Use: pending, in_progress, completed, failed, blocked");
@@ -258,16 +424,13 @@ public class PlannerTool {
     }
 
     /**
-     * Get the next task to work on.
+     * Handle getNextTask mode - retrieves the next pending task to work on.
      */
-    @McpTool(description = "Get the next pending task that can be executed (all dependencies complete)")
-    public String getNextTask(
-        @McpParam(
-            description = "The plan ID",
-            examples = {"abc12345"}
-        )
-        String planId
-    ) {
+    private String handleGetNextTask(String planId) {
+        if (planId == null || planId.isBlank()) {
+            throw new PlannerException("Plan ID is required for getNextTask mode. Provide planId parameter.");
+        }
+
         PlanStore.Task nextTask = store.getNextTask(planId);
 
         if (nextTask == null) {
@@ -294,16 +457,13 @@ public class PlannerTool {
     }
 
     /**
-     * Delete a plan.
+     * Handle deletePlan mode - deletes a plan and all its tasks.
      */
-    @McpTool(description = "Delete a plan and all its tasks")
-    public String deletePlan(
-        @McpParam(
-            description = "The plan ID to delete",
-            examples = {"abc12345"}
-        )
-        String planId
-    ) {
+    private String handleDeletePlan(String planId) {
+        if (planId == null || planId.isBlank()) {
+            throw new PlannerException("Plan ID is required for deletePlan mode. Provide planId parameter.");
+        }
+
         PlanStore.Plan plan = store.getPlan(planId);
         if (plan == null) {
             throw new PlannerException("Plan not found: " + planId);

@@ -29,7 +29,7 @@ class FileWriteToolTest {
         Path testFile = tempDir.resolve("test.txt");
         String content = "Hello, World!";
 
-        FileWriteResult result = tool.writeFile(testFile.toString(), content, false);
+        FileWriteResult result = (FileWriteResult) tool.filewrite("writeFile", testFile.toString(), content, null, false, null);
 
         assertNotNull(result);
         assertEquals(testFile.toString(), result.getPath());
@@ -49,7 +49,7 @@ class FileWriteToolTest {
         Files.writeString(testFile, "Original content");
 
         String newContent = "New content";
-        FileWriteResult result = tool.writeFile(testFile.toString(), newContent, false);
+        FileWriteResult result = (FileWriteResult) tool.filewrite("writeFile", testFile.toString(), newContent, null, false, null);
 
         assertNotNull(result);
         assertFalse(result.isCreated()); // File already existed
@@ -64,7 +64,7 @@ class FileWriteToolTest {
         Path testFile = tempDir.resolve("subdir/test.txt");
 
         String content = "Hello!";
-        FileWriteResult result = tool.writeFile(testFile.toString(), content, true);
+        FileWriteResult result = (FileWriteResult) tool.filewrite("writeFile", testFile.toString(), content, null, true, null);
 
         assertNotNull(result);
         assertTrue(Files.exists(testFile));
@@ -77,7 +77,7 @@ class FileWriteToolTest {
 
         String content = "Hello!";
         assertThrows(FileWriteException.class, () -> {
-            tool.writeFile(testFile.toString(), content, false);
+            tool.filewrite("writeFile", testFile.toString(), content, null, false, null);
         });
     }
 
@@ -87,7 +87,7 @@ class FileWriteToolTest {
         Files.writeString(testFile, "Line 1\n");
 
         String appendContent = "Line 2\n";
-        FileWriteResult result = tool.appendFile(testFile.toString(), appendContent, false);
+        FileWriteResult result = (FileWriteResult) tool.filewrite("appendFile", testFile.toString(), appendContent, null, null, false);
 
         assertNotNull(result);
         assertEquals("append", result.getOperation());
@@ -102,7 +102,7 @@ class FileWriteToolTest {
         Path testFile = tempDir.resolve("new.txt");
 
         String content = "New file content";
-        FileWriteResult result = tool.appendFile(testFile.toString(), content, true);
+        FileWriteResult result = (FileWriteResult) tool.filewrite("appendFile", testFile.toString(), content, null, null, true);
 
         assertNotNull(result);
         assertTrue(result.isCreated());
@@ -114,7 +114,7 @@ class FileWriteToolTest {
         Path testFile = tempDir.resolve("missing.txt");
 
         assertThrows(FileWriteException.class, () -> {
-            tool.appendFile(testFile.toString(), "content", false);
+            tool.filewrite("appendFile", testFile.toString(), "content", null, null, false);
         });
     }
 
@@ -123,7 +123,7 @@ class FileWriteToolTest {
         Path testFile = tempDir.resolve("test.txt");
         List<String> lines = List.of("Line 1", "Line 2", "Line 3");
 
-        FileWriteResult result = tool.writeLines(testFile.toString(), lines, false);
+        FileWriteResult result = (FileWriteResult) tool.filewrite("writeLines", testFile.toString(), null, lines, false, null);
 
         assertNotNull(result);
         assertEquals(3, result.getLinesWritten());
@@ -139,7 +139,7 @@ class FileWriteToolTest {
         Files.writeString(testFile, "Line 1\n");
 
         List<String> newLines = List.of("Line 2", "Line 3");
-        FileWriteResult result = tool.appendLines(testFile.toString(), newLines, false);
+        FileWriteResult result = (FileWriteResult) tool.filewrite("appendLines", testFile.toString(), null, newLines, null, false);
 
         assertNotNull(result);
 
@@ -156,7 +156,7 @@ class FileWriteToolTest {
         Path testFile = tempDir.resolve("test.txt");
         Files.writeString(testFile, "content");
 
-        String result = tool.deleteFile(testFile.toString());
+        String result = (String) tool.filewrite("deleteFile", testFile.toString(), null, null, null, null);
 
         assertNotNull(result);
         assertTrue(result.contains("Deleted"));
@@ -168,7 +168,7 @@ class FileWriteToolTest {
         Path testFile = tempDir.resolve("missing.txt");
 
         assertThrows(FileWriteException.class, () -> {
-            tool.deleteFile(testFile.toString());
+            tool.filewrite("deleteFile", testFile.toString(), null, null, null, null);
         });
     }
 
@@ -178,7 +178,7 @@ class FileWriteToolTest {
         Files.createDirectory(testDir);
 
         assertThrows(FileWriteException.class, () -> {
-            tool.deleteFile(testDir.toString());
+            tool.filewrite("deleteFile", testDir.toString(), null, null, null, null);
         });
     }
 
@@ -186,7 +186,7 @@ class FileWriteToolTest {
     void testCreateDirectory() {
         Path testDir = tempDir.resolve("newdir");
 
-        String result = tool.createDirectory(testDir.toString(), false);
+        String result = (String) tool.filewrite("createDirectory", testDir.toString(), null, null, false, null);
 
         assertNotNull(result);
         assertTrue(result.contains("Created"));
@@ -197,7 +197,7 @@ class FileWriteToolTest {
     void testCreateDirectoryWithParents() {
         Path testDir = tempDir.resolve("parent/child/grandchild");
 
-        String result = tool.createDirectory(testDir.toString(), true);
+        String result = (String) tool.filewrite("createDirectory", testDir.toString(), null, null, true, null);
 
         assertNotNull(result);
         assertTrue(Files.isDirectory(testDir));
@@ -209,7 +209,7 @@ class FileWriteToolTest {
         Path testDir = tempDir.resolve("existing");
         Files.createDirectory(testDir);
 
-        String result = tool.createDirectory(testDir.toString(), false);
+        String result = (String) tool.filewrite("createDirectory", testDir.toString(), null, null, false, null);
 
         assertNotNull(result);
         assertTrue(result.contains("already exists"));
@@ -218,7 +218,7 @@ class FileWriteToolTest {
     @Test
     void testDirectoryTraversalPrevention() {
         assertThrows(FileWriteException.class, () -> {
-            tool.writeFile("../../../etc/passwd", "hacked", false);
+            tool.filewrite("writeFile", "../../../etc/passwd", "hacked", null, false, null);
         });
     }
 
@@ -229,18 +229,18 @@ class FileWriteToolTest {
         Path testFile = tempDir.resolve("large.txt");
 
         assertThrows(FileWriteException.class, () -> {
-            tool.writeFile(testFile.toString(), largeContent, false);
+            tool.filewrite("writeFile", testFile.toString(), largeContent, null, false, null);
         });
     }
 
     @Test
     void testEmptyPathValidation() {
         assertThrows(FileWriteException.class, () -> {
-            tool.writeFile("", "content", false);
+            tool.filewrite("writeFile", "", "content", null, false, null);
         });
 
         assertThrows(FileWriteException.class, () -> {
-            tool.writeFile(null, "content", false);
+            tool.filewrite("writeFile", null, "content", null, false, null);
         });
     }
 
@@ -249,7 +249,7 @@ class FileWriteToolTest {
         Path testFile = tempDir.resolve("multiline.txt");
         String content = "Line 1\nLine 2\nLine 3";
 
-        FileWriteResult result = tool.writeFile(testFile.toString(), content, false);
+        FileWriteResult result = (FileWriteResult) tool.filewrite("writeFile", testFile.toString(), content, null, false, null);
 
         assertEquals(3, result.getLinesWritten());
 

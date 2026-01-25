@@ -266,6 +266,123 @@ public static void main(String[] args) {
 
 See [EchoServer.java](src/test/java/com/ultrathink/fastmcp/example/EchoServer.java) for a comprehensive example demonstrating all features.
 
+## MCP Client Configuration
+
+Sample MCP client configurations are available in the [examples/mcp-configs](examples/mcp-configs/) directory for connecting to FastMCP4J servers from Claude Desktop or other MCP clients.
+
+### Quick Start with EchoServer
+
+1. Start the server:
+   ```bash
+   mvn exec:java -Dexec.mainClass="com.ultrathink.fastmcp.example.EchoServer"
+   ```
+
+2. Copy [examples/mcp-configs/echo-server-config.json](examples/mcp-configs/echo-server-config.json) to your Claude Desktop config:
+   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+   - **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+3. Restart Claude Desktop and start chatting!
+
+See [examples/mcp-configs/README.md](examples/mcp-configs/README.md) for detailed configuration options.
+
+## MCP Client Configuration
+
+### Connecting to EchoServer
+
+To connect an MCP client (like Claude Desktop) to the EchoServer, add the server to your MCP configuration:
+
+#### For HTTP Streamable Transport (Default)
+
+**Claude Desktop (macOS)**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Claude Desktop (Windows)**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "echo": {
+      "transport": {
+        "type": "http_streamable",
+        "url": "http://localhost:3002/mcp",
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    }
+  }
+}
+```
+
+#### For SSE Transport
+
+If you start EchoServer with `.sse()` instead of `.streamable()`:
+
+```json
+{
+  "mcpServers": {
+    "echo": {
+      "transport": {
+        "type": "sse",
+        "url": "http://localhost:3002/mcp/sse"
+      }
+    }
+  }
+}
+```
+
+#### For STDIO Transport
+
+For stdio transport, configure the command to run the server:
+
+```json
+{
+  "mcpServers": {
+    "echo": {
+      "command": "java",
+      "args": [
+        "-cp",
+        "target/fastmcp-java-0.1.0-SNAPSHOT.jar",
+        "com.ultrathink.fastmcp.example.EchoServer"
+      ],
+      "env": {
+        "JAVA_HOME": "/path/to/java"
+      }
+    }
+  }
+}
+```
+
+### Available Tools
+
+Once connected, EchoServer exposes the following tools:
+
+| Tool | Description |
+|------|-------------|
+| `echo` | Echo back message with timestamp |
+| `calculate` | Perform arithmetic (add, subtract, multiply, divide) |
+| `processWithProgress` | Process task with progress reporting |
+| `asyncTask` | Async task with progress tracking |
+| `memory` | Persistent storage (view, create, str_replace, insert, delete, rename) |
+| `todo` | Task management (add, list, update, delete, clearCompleted) |
+| `planner` | Task planning (createPlan, listPlans, getPlan, addTask, updateTask, etc.) |
+| `fileread` | File operations (readLines, readFile, grep, getStats) |
+| `filewrite` | File operations (writeFile, appendFile, writeLines, deleteFile, createDirectory) |
+
+### Testing the Connection
+
+After starting EchoServer and adding it to your MCP config:
+
+1. Restart Claude Desktop (or your MCP client)
+2. The server should appear in the list of available MCP servers
+3. Try using the `echo` tool with a test message
+
+Example interaction with Claude:
+```
+User: Use the echo tool to say "Hello, FastMCP4J!"
+Claude: [calls echo tool]
+Server: [17:30:45] Echo: Hello, FastMCP4J!
+```
+
 ## Status
 
 ✅ **v0.1.0** - Core features implemented
