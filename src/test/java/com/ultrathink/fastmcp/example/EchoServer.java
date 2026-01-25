@@ -1,26 +1,20 @@
 package com.ultrathink.fastmcp.example;
 
 import com.ultrathink.fastmcp.annotations.*;
-import com.ultrathink.fastmcp.context.Context;
-import com.ultrathink.fastmcp.context.McpContext;
 import com.ultrathink.fastmcp.core.FastMCP;
-import io.modelcontextprotocol.spec.McpSchema;
-import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 import java.util.Map;
 
 /**
- * Comprehensive demo server showcasing ALL FastMCP4J features:
+ * Comprehensive demo server showcasing FastMCP4J features:
  *
  * ANNOTATIONS:
  * - @McpServer: Server metadata with icons
  * - @McpTool: Tools with icons
  * - @McpResource: Resources with icons
  * - @McpPrompt: Prompts with icons
- * - @McpAsync: Async operations
  * - @McpContext: Context injection
  * - @McpPreHook/@McpPostHook: Pre/post hooks
  * - @McpMemory: Memory tool
@@ -32,11 +26,11 @@ import java.util.Map;
  * FEATURES:
  * - Enhanced parameter descriptions (@McpParam)
  * - Icons support (server, tools, resources, prompts)
- * - Context access (session state, notifications)
  * - Pre/post execution hooks
- * - Reactive programming (Mono/Flux)
  * - Multiple transport types (stdio, sse, streamable)
  * - Annotation-based tool enablement
+ *
+ * For async operations demo, see AsyncEcho.java
  */
 @McpServer(
     name = "echo",
@@ -126,77 +120,6 @@ public class EchoServer {
         };
     }
 
-
-    @McpTool(
-        description = "Process task with progress reporting using Context",
-        icons = {"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzEwQjk4MSIvPgo8Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSI4IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIGZpbGw9Im5vbmUiLz4KPHBhdGggZD0iTTE2IDE2VjEyIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4=:image/svg+xml:32x32"}
-    )
-    public String processWithProgress(
-        @McpParam(description = "Number of steps", examples = {"10", "100"})
-        int steps,
-
-        @McpContext Context ctx
-    ) {
-        ctx.info("Starting process with " + steps + " steps");
-
-        for (int i = 1; i <= steps; i++) {
-            ctx.reportProgress(i, steps, "Processing step " + i + " of " + steps);
-            try {
-                Thread.sleep(10); // Simulate work
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-
-        ctx.info("Process completed!");
-        return "Completed " + steps + " steps";
-    }
-
-    // ============================================
-    // TOOLS - Async Examples with Context
-    // ============================================
-
-    @McpTool(
-        description = "Async task with progress reporting",
-        icons = {"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzg0NDU5OSIvPgo8cGF0aCBkPSJNMTYgOEMxMS41ODE3IDggOCAxMS41ODE3IDggMTZDOCAyMC40MTgzIDExLjU4MTcgMjQgMTYgMjRDMjAuNDE4MyAyNCAyNCAyMC40MTgzIDI0IDE2QzI0IDExLjU4MTcgMjAuNDE4MyA4IDE2IDhaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTYgMTJWMjAiIHN0cm9rZT0iIzg0NDU5OSIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KPHAJdGggZD0iTTE2IDEyTDIwIDE2TDE2IDIwTDEyIDE2TDE2IDEyWiIgZmlsbD0iIzg0NDU5OSIvPgo8L3N2Zz4=:image/svg+xml:32x32"}
-    )
-    @McpAsync
-    public Mono<String> asyncTask(
-        @McpParam(
-            description = "Task name to execute",
-            examples = {"backup", "sync", "analyze"}
-        )
-        String taskName,
-
-        @McpParam(
-            description = "Duration in seconds",
-            examples = {"5", "10"},
-            defaultValue = "3",
-            required = false
-        )
-        int durationSeconds,
-
-        @McpContext Context ctx
-    ) {
-        return Mono.fromRunnable(() -> {
-            ctx.info("🚀 Starting async task: " + taskName);
-        })
-        .then(Mono.defer(() -> {
-            // Simulate work with progress
-            for (int i = 1; i <= durationSeconds; i++) {
-                ctx.reportProgress(i, durationSeconds, "Processing " + taskName + " (" + i + "/" + durationSeconds + ")");
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-            ctx.info("✅ Completed async task: " + taskName);
-            return Mono.just(String.format("Task '%s' completed in %d seconds at %s",
-                taskName, durationSeconds, LocalDateTime.now()));
-        }));
-    }
-
     // ============================================
     // RESOURCES - Different Content Types with Icons
     // ============================================
@@ -206,7 +129,7 @@ public class EchoServer {
         name = "Server Information",
         description = "Get current server status and information",
         mimeType = "text/plain",
-        icons = {"https://example.com/info-icon.png:image/png:32x32"}
+        icons = {"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzY3Q0FDNSIvPgo8cGF0aCBkPSJNMTYgNkMxMC42ODYzIDYgNiAxMC42ODYzIDYgMTZDNiAyMS4zMTM3IDEwLjY4NjMgMjYgMTYgMjZDMjEuMzEzNyAyNiAyNiAyMS4zMTM3IDI2IDE2QzI2IDEwLjY4NjMgMjEuMzEzNyA2IDE2IDZaIiBmaWxsPSJ3aGl0ZSIvPgo8Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSI0IiBmaWxsPSIjNjdDQUM1Ii8+Cjwvc3ZnPg==:image/svg+xml:32x32"}
     )
     public String getServerInfo() {
         return String.format("""
@@ -224,17 +147,20 @@ public class EchoServer {
             ✓ FileRead Tool (@McpFileRead)
             ✓ FileWrite Tool (@McpFileWrite)
             ✓ Icons Support
-            ✓ Context Access
             ✓ Pre/Post Hooks
-            ✓ Async Operations
 
-            CAPABILITIES:
-            - Tools with enhanced parameters
-            - Resources with multiple formats
-            - Prompts with templates
-            - Session state management
-            - Progress reporting
-            - Notification system
+            CUSTOM TOOLS:
+            - echo: Echo messages with timestamp
+            - calculate: Arithmetic operations
+
+            BUILT-IN TOOLS:
+            - memory: Persistent storage
+            - todo: Task management
+            - planner: Hierarchical planning
+            - fileread: File reading operations
+            - filewrite: File writing operations
+
+            For async operations, see AsyncEcho.java
             """, LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
     }
 
@@ -243,7 +169,7 @@ public class EchoServer {
     public static void main(String[] args) {
         System.out.println("""
             ╔════════════════════════════════════════════════════════════╗
-            ║     FastMCP4J Echo Server v3.0.0 - Full Feature Demo     ║
+            ║     FastMCP4J Echo Server v3.0.0 - Core Features Demo    ║
             ╚════════════════════════════════════════════════════════════╝
 
             📦 Features Enabled:
@@ -253,17 +179,17 @@ public class EchoServer {
                ✓ FileRead Tool    (@McpFileRead)
                ✓ FileWrite Tool   (@McpFileWrite)
                ✓ Icons Support    (server, tools, resources, prompts)
-               ✓ Context Access   (@McpContext)
                ✓ Pre/Post Hooks   (@McpPreHook, @McpPostHook)
-               ✓ Async Support    (@McpAsync)
 
-            🛠️  Custom Tools: 8
-            📄 Resources: 4
-            💬 Prompts: 4
+            🛠️  Custom Tools: 2 (echo, calculate)
+            📄 Resources: 1
+            💬 Prompts: 0
 
             🌐 Transport: HTTP Streamable
             🔌 Port: 3002
             📍 MCP URI: /mcp
+
+            💡 For async operations, see AsyncEcho.java
 
             """);
 
