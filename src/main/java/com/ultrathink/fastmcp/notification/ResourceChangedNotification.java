@@ -1,8 +1,8 @@
 package com.ultrathink.fastmcp.notification;
 
-import lombok.Value;
+import lombok.Data;
 
-@Value
+@Data
 public class ResourceChangedNotification {
     String uri;
     ResourceType type;
@@ -11,5 +11,12 @@ public class ResourceChangedNotification {
         CREATE,
         UPDATE,
         DELETE
+    }
+    
+    public ResourceChangedNotification() {}
+    
+    public ResourceChangedNotification(String uri, ResourceType type) {
+        this.uri = uri;
+        this.type = type;
     }
 }

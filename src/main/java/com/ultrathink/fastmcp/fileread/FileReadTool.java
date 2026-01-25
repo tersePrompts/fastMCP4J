@@ -15,20 +15,11 @@ import java.util.regex.*;
 import java.util.stream.Collectors;
 
 /**
- * FileReadTool provides operations for reading and searching files.
- * 
- * Based on Claude Code's file tools pattern:
- * - Read specific lines with context (read_lines)
- * - Grep/search across files (grep)
- * - Read entire files (read_file)
- * - Get file statistics (get_stats)
- * 
  * Security considerations:
  * - No file writing operations
  * - No directory traversal (path validation)
  * - File existence checks before operations
  */
-@McpTool(name = "fileread")
 public class FileReadTool {
     
     private static final int MAX_LINES = 1000000; // Prevent reading extremely large files

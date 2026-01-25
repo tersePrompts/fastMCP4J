@@ -49,6 +49,7 @@ public class InMemoryMemoryStore implements MemoryStore {
     @Override
     public List<MemoryEntry> list(String path) throws MemoryException {
         path = normalizePath(path);
+        final String normalizedPath = path;
 
         globalLock.readLock().lock();
         try {
@@ -56,12 +57,12 @@ public class InMemoryMemoryStore implements MemoryStore {
             boolean isDir = files.values().stream()
                 .anyMatch(entry -> {
                     String entryPath = entry.path();
-                    if (entryPath.equals(path)) return false;
-                    return entryPath.startsWith(path + "/");
+                    if (entryPath.equals(normalizedPath)) return false;
+                    return entryPath.startsWith(normalizedPath + "/");
                 });
 
-            if (!isDir && !files.containsKey(path)) {
-                throw new MemoryException("Path does not exist: " + path);
+            if (!isDir && !files.containsKey(normalizedPath)) {
+                throw new MemoryException("Path does not exist: " + normalizedPath);
             }
 
             List<MemoryEntry> entries = new ArrayList<>();
@@ -69,40 +70,39 @@ public class InMemoryMemoryStore implements MemoryStore {
             // Find immediate children
             files.values().forEach(entry -> {
                 String entryPath = entry.path();
-                if (entryPath.equals(path)) return;
+                if (entryPath.equals(normalizedPath)) return;
 
-                if (entryPath.startsWith(path + "/")) {
-                    String relative = entryPath.substring(path.length() + 1);
+                if (entryPath.startsWith(normalizedPath + "/")) {
+                    String relative = entryPath.substring(normalizedPath.length() + 1);
                     String firstSegment = relative.contains("/")
                         ? relative.substring(0, relative.indexOf("/"))
                         : relative;
 
-                    String childPath = path.isEmpty() ? firstSegment : path + "/" + firstSegment;
+                    String childPath = normalizedPath.isEmpty() ? firstSegment : normalizedPath + "/" + firstSegment;
+                    final String finalChildPath = childPath;
+                    final boolean finalChildIsDir = files.values().stream()
+                        .anyMatch(e -> e.path().startsWith(finalChildPath + "/") && !e.path().equals(finalChildPath));
 
                     // Check if we've already added this directory
-                    if (entries.stream().noneMatch(e -> e.path().equals(childPath))) {
-                        // Check if it's a directory
-                        boolean childIsDir = files.values().stream()
-                            .anyMatch(e -> e.path().startsWith(childPath + "/") && !e.path().equals(childPath));
-
-                        long size = childIsDir
+                    if (entries.stream().noneMatch(e -> e.path().equals(finalChildPath))) {
+                        final long size = finalChildIsDir
                             ? files.values().stream()
-                                .filter(e -> e.path().startsWith(childPath + "/") || e.path().equals(childPath))
+                                .filter(e -> e.path().startsWith(finalChildPath + "/") || e.path().equals(finalChildPath))
                                 .mapToLong(MemoryEntry::size)
                                 .sum()
                             : entry.size();
 
-                        long lastModified = childIsDir
+                        final long lastModified = finalChildIsDir
                             ? files.values().stream()
-                                .filter(e -> e.path().startsWith(childPath + "/") || e.path().equals(childPath))
+                                .filter(e -> e.path().startsWith(finalChildPath + "/") || e.path().equals(finalChildPath))
                                 .mapToLong(MemoryEntry::lastModified)
                                 .max()
                                 .orElse(Instant.now().toEpochMilli())
                             : entry.lastModified();
 
                         entries.add(new MemoryEntry(
-                            childPath,
-                            childIsDir,
+                            finalChildPath,
+                            finalChildIsDir,
                             size,
                             lastModified,
                             Optional.empty()
@@ -123,14 +123,15 @@ public class InMemoryMemoryStore implements MemoryStore {
     @Override
     public boolean exists(String path) {
         path = normalizePath(path);
+        final String normalizedPath = path;
         globalLock.readLock().lock();
         try {
-            if (files.containsKey(path)) {
+            if (files.containsKey(normalizedPath)) {
                 return true;
             }
             // Check if it's a directory
             return files.values().stream()
-                .anyMatch(entry -> entry.path().startsWith(path + "/"));
+                .anyMatch(entry -> entry.path().startsWith(normalizedPath + "/"));
         } finally {
             globalLock.readLock().unlock();
         }
@@ -139,27 +140,28 @@ public class InMemoryMemoryStore implements MemoryStore {
     @Override
     public FileContent read(String path, Optional<int[]> viewRange) throws MemoryException {
         path = normalizePath(path);
+        final String normalizedPath = path;
 
         globalLock.readLock().lock();
         try {
-            MemoryEntry entry = files.get(path);
+            MemoryEntry entry = files.get(normalizedPath);
             if (entry == null) {
-                throw new MemoryException("File not found: " + path);
+                throw new MemoryException("File not found: " + normalizedPath);
             }
             if (entry.isDirectory()) {
-                throw new MemoryException("Cannot read directory as file: " + path);
+                throw new MemoryException("Cannot read directory as file: " + normalizedPath);
             }
 
-            String content = fileContents.get(path);
+            String content = fileContents.get(normalizedPath);
             if (content == null) {
-                throw new MemoryException("File content not found: " + path);
+                throw new MemoryException("File content not found: " + normalizedPath);
             }
 
             List<String> lines = List.of(content.split("\n", -1));
 
             if (lines.size() > MAX_LINES) {
                 throw new MemoryException(
-                    String.format("File %s exceeds maximum line limit of %d lines.", path, MAX_LINES)
+                    String.format("File %s exceeds maximum line limit of %d lines.", normalizedPath, MAX_LINES)
                 );
             }
 
@@ -173,7 +175,7 @@ public class InMemoryMemoryStore implements MemoryStore {
                 lineNumbersToContent.put(i + 1, lines.get(i));
             }
 
-            return new FileContent(path, lines, lineNumbersToContent);
+            return new FileContent(normalizedPath, lines, lineNumbersToContent);
         } finally {
             globalLock.readLock().unlock();
         }
@@ -182,15 +184,16 @@ public class InMemoryMemoryStore implements MemoryStore {
     @Override
     public void create(String path, String content) throws MemoryException {
         path = normalizePath(path);
+        final String normalizedPath = path;
 
         globalLock.writeLock().lock();
         try {
-            if (files.containsKey(path)) {
-                throw new MemoryException("File already exists: " + path);
+            if (files.containsKey(normalizedPath)) {
+                throw new MemoryException("File already exists: " + normalizedPath);
             }
 
             // Check parent directory exists
-            String parentPath = getParentPath(path);
+            String parentPath = getParentPath(normalizedPath);
             if (!parentPath.isEmpty() && !exists(parentPath)) {
                 throw new MemoryException("Parent directory does not exist: " + parentPath);
             }
@@ -203,15 +206,15 @@ public class InMemoryMemoryStore implements MemoryStore {
             }
 
             MemoryEntry entry = new MemoryEntry(
-                path,
+                normalizedPath,
                 false,
                 size,
                 Instant.now().toEpochMilli(),
                 Optional.empty()
             );
 
-            files.put(path, entry);
-            fileContents.put(path, content);
+            files.put(normalizedPath, entry);
+            fileContents.put(normalizedPath, content);
         } finally {
             globalLock.writeLock().unlock();
         }
@@ -220,17 +223,18 @@ public class InMemoryMemoryStore implements MemoryStore {
     @Override
     public void replace(String path, String oldStr, String newStr) throws MemoryException {
         path = normalizePath(path);
+        final String normalizedPath = path;
 
         globalLock.writeLock().lock();
         try {
-            String content = fileContents.get(path);
+            String content = fileContents.get(normalizedPath);
             if (content == null) {
-                throw new MemoryException("File not found: " + path);
+                throw new MemoryException("File not found: " + normalizedPath);
             }
 
             if (!content.contains(oldStr)) {
                 throw new MemoryException(
-                    String.format("Text to replace not found in file: %s", path)
+                    String.format("Text to replace not found in file: %s", normalizedPath)
                 );
             }
 
@@ -249,12 +253,12 @@ public class InMemoryMemoryStore implements MemoryStore {
             }
 
             String newContent = content.replace(oldStr, newStr);
-            fileContents.put(path, newContent);
+            fileContents.put(normalizedPath, newContent);
 
             // Update entry metadata
-            MemoryEntry entry = files.get(path);
+            MemoryEntry entry = files.get(normalizedPath);
             if (entry != null) {
-                files.put(path, new MemoryEntry(
+                files.put(normalizedPath, new MemoryEntry(
                     entry.path(),
                     entry.isDirectory(),
                     newContent.getBytes().length,
@@ -270,12 +274,13 @@ public class InMemoryMemoryStore implements MemoryStore {
     @Override
     public void insert(String path, int insertLine, String insertText) throws MemoryException {
         path = normalizePath(path);
+        final String normalizedPath = path;
 
         globalLock.writeLock().lock();
         try {
-            String content = fileContents.get(path);
+            String content = fileContents.get(normalizedPath);
             if (content == null) {
-                throw new MemoryException("File not found: " + path);
+                throw new MemoryException("File not found: " + normalizedPath);
             }
 
             List<String> lines = new ArrayList<>(List.of(content.split("\n", -1)));
@@ -292,12 +297,12 @@ public class InMemoryMemoryStore implements MemoryStore {
 
             lines.add(insertLine, insertText);
             String newContent = String.join("\n", lines);
-            fileContents.put(path, newContent);
+            fileContents.put(normalizedPath, newContent);
 
             // Update entry metadata
-            MemoryEntry entry = files.get(path);
+            MemoryEntry entry = files.get(normalizedPath);
             if (entry != null) {
-                files.put(path, new MemoryEntry(
+                files.put(normalizedPath, new MemoryEntry(
                     entry.path(),
                     entry.isDirectory(),
                     newContent.getBytes().length,
@@ -313,26 +318,27 @@ public class InMemoryMemoryStore implements MemoryStore {
     @Override
     public void delete(String path) throws MemoryException {
         path = normalizePath(path);
+        final String normalizedPath = path;
 
         globalLock.writeLock().lock();
         try {
-            if (!files.containsKey(path)) {
-                throw new MemoryException("Path does not exist: " + path);
+            if (!files.containsKey(normalizedPath)) {
+                throw new MemoryException("Path does not exist: " + normalizedPath);
             }
 
-            boolean isDirectory = files.get(path).isDirectory();
+            boolean isDirectory = files.get(normalizedPath).isDirectory();
 
             if (isDirectory) {
                 // Delete all files in the directory
                 files.keySet().stream()
-                    .filter(p -> p.startsWith(path + "/"))
+                    .filter(p -> p.startsWith(normalizedPath + "/"))
                     .toList()
                     .forEach(fileContents::remove);
             } else {
-                fileContents.remove(path);
+                fileContents.remove(normalizedPath);
             }
 
-            files.remove(path);
+            files.remove(normalizedPath);
         } finally {
             globalLock.writeLock().unlock();
         }
@@ -342,29 +348,31 @@ public class InMemoryMemoryStore implements MemoryStore {
     public void rename(String oldPath, String newPath) throws MemoryException {
         oldPath = normalizePath(oldPath);
         newPath = normalizePath(newPath);
+        final String normalizedOldPath = oldPath;
+        final String normalizedNewPath = newPath;
 
         globalLock.writeLock().lock();
         try {
-            if (!files.containsKey(oldPath)) {
-                throw new MemoryException("Old path does not exist: " + oldPath);
+            if (!files.containsKey(normalizedOldPath)) {
+                throw new MemoryException("Old path does not exist: " + normalizedOldPath);
             }
 
-            if (files.containsKey(newPath)) {
-                throw new MemoryException("New path already exists: " + newPath);
+            if (files.containsKey(normalizedNewPath)) {
+                throw new MemoryException("New path already exists: " + normalizedNewPath);
             }
 
-            boolean isDirectory = files.get(oldPath).isDirectory();
+            boolean isDirectory = files.get(normalizedOldPath).isDirectory();
 
             if (isDirectory) {
                 // Rename all files in the directory
                 List<String> keys = files.keySet().stream()
-                    .filter(p -> p.startsWith(oldPath + "/") || p.equals(oldPath))
+                    .filter(p -> p.startsWith(normalizedOldPath + "/") || p.equals(normalizedOldPath))
                     .toList();
 
                 for (String key : keys) {
-                    String newKey = key.equals(oldPath)
-                        ? newPath
-                        : newPath + key.substring(oldPath.length());
+                    String newKey = key.equals(normalizedOldPath)
+                        ? normalizedNewPath
+                        : normalizedNewPath + key.substring(normalizedOldPath.length());
 
                     MemoryEntry entry = files.get(key);
                     files.remove(key);
@@ -382,17 +390,17 @@ public class InMemoryMemoryStore implements MemoryStore {
                     }
                 }
             } else {
-                MemoryEntry entry = files.remove(oldPath);
-                files.put(newPath, new MemoryEntry(
-                    newPath,
+                MemoryEntry entry = files.remove(normalizedOldPath);
+                files.put(normalizedNewPath, new MemoryEntry(
+                    normalizedNewPath,
                     entry.isDirectory(),
                     entry.size(),
                     Instant.now().toEpochMilli(),
                     entry.contentType()
                 ));
 
-                String content = fileContents.remove(oldPath);
-                fileContents.put(newPath, content);
+                String content = fileContents.remove(normalizedOldPath);
+                fileContents.put(normalizedNewPath, content);
             }
         } finally {
             globalLock.writeLock().unlock();
@@ -402,9 +410,10 @@ public class InMemoryMemoryStore implements MemoryStore {
     @Override
     public Optional<MemoryEntry> getMetadata(String path) {
         path = normalizePath(path);
+        final String normalizedPath = path;
         globalLock.readLock().lock();
         try {
-            return Optional.ofNullable(files.get(path));
+            return Optional.ofNullable(files.get(normalizedPath));
         } finally {
             globalLock.readLock().unlock();
         }

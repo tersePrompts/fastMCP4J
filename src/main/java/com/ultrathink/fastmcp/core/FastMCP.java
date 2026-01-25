@@ -5,7 +5,6 @@ import com.ultrathink.fastmcp.adapter.*;
 import com.ultrathink.fastmcp.annotations.McpMemory;
 import com.ultrathink.fastmcp.annotations.McpTodo;
 import com.ultrathink.fastmcp.annotations.McpPlanner;
-import com.ultrathink.fastmcp.annotations.McpServer;
 import com.ultrathink.fastmcp.memory.InMemoryMemoryStore;
 import com.ultrathink.fastmcp.memory.MemoryStore;
 import com.ultrathink.fastmcp.memory.MemoryTool;
@@ -23,7 +22,7 @@ import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpAsyncServer;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpServer.AsyncSpecification;
-import io.modelcontextprotocol.server.StdioServerTransportProvider;
+import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.server.McpServerFeatures;
@@ -102,7 +101,7 @@ public final class FastMCP {
         ServerMeta meta = scanner.scan(serverClass);
         var mapper = new JacksonMcpJsonMapper(new ObjectMapper());
 
-        McpServer.AsyncSpecification<?> builder = switch (transport) {
+        io.modelcontextprotocol.server.McpServer.AsyncSpecification<?> builder = switch (transport) {
             case STDIO -> io.modelcontextprotocol.server.McpServer.async(new StdioServerTransportProvider(mapper));
 
             case HTTP_SSE -> {
@@ -158,7 +157,7 @@ public final class FastMCP {
                 new McpServerFeatures.AsyncToolSpecification(
                     tool,
                     null,
-                    (exchange, args) -> memoryTool.handleToolCall(exchange, args)
+                    (exchange, args) -> memoryTool.handleToolCall(exchange, (java.util.Map<String, Object>) args.arguments())
                 )
             );
         }

@@ -86,10 +86,10 @@ public class InMemoryTodoStoreTest {
         store.add("Task 2");
         store.add("Task 3");
 
-        String id1 = store.get(TodoStatus.PENDING).get(0).id();
+        String id1 = store.list(TodoStatus.PENDING).get(0).id();
         store.updateStatus(id1, TodoStatus.IN_PROGRESS);
 
-        String id2 = store.get(TodoStatus.PENDING).get(0).id();
+        String id2 = store.list(TodoStatus.PENDING).get(0).id();
         store.updateStatus(id2, TodoStatus.COMPLETED);
 
         assertEquals(3, store.count(null));
@@ -109,10 +109,10 @@ public class InMemoryTodoStoreTest {
         store.add("Task 2");
         store.add("Task 3");
 
-        String id1 = store.get(TodoStatus.PENDING).get(0).id();
+        String id1 = store.list(TodoStatus.PENDING).get(0).id();
         store.updateStatus(id1, TodoStatus.IN_PROGRESS);
 
-        String id2 = store.get(TodoStatus.PENDING).get(0).id();
+        String id2 = store.list(TodoStatus.PENDING).get(0).id();
         store.updateStatus(id2, TodoStatus.COMPLETED);
 
         assertEquals(3, store.count(null));

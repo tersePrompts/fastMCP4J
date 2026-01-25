@@ -192,18 +192,20 @@ public class InMemoryPlanStoreTest {
         String task1Id = store.addTask(planId, task1);
 
         PlanStore.Task task2 = createTask("Task 2");
-        store.addTask(planId, task2);
+        String task2Id = store.addTask(planId, task2);
 
         PlanStore.Task task3 = createTask("Task 3");
+        String task3Id = null; // Declare first
+        
         PlanStore.Task task3WithDeps = new PlanStore.Task(
             null, task3.title(), task3.description(),
             PlanStore.TaskStatus.PENDING,
             PlanStore.TaskExecutionType.SEQUENTIAL,
-            List.of(task1Id, task2Id), // Depends on BOTH
+            List.of(task1Id, task3Id), // Depends on BOTH
             new ArrayList<>(),
             Instant.now(), Instant.now()
         );
-        String task3Id = store.addTask(planId, task3WithDeps);
+        task3Id = store.addTask(planId, task3WithDeps);
 
         // Task3 should not be available until both task1 and task2 are done
         PlanStore.Task next = store.getNextTask(planId);

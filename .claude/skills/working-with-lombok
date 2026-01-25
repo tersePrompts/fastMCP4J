@@ -1,0 +1,101 @@
+## How **Lombok** works (under the hood)
+
+Project Lombok uses **Java annotation processing** to modify your classes **at compile time**. You write annotations; Lombok injects the boilerplate into the compiler’s Abstract Syntax Tree (AST). The generated methods exist in the **compiled bytecode**, not in your source files.
+
+![Image](https://yqintl.alicdn.com/5e055d79172d0ad7c4a427bd32b7d2d37e020dd5.png)
+
+![Image](https://cdn.prod.website-files.com/639ac663a95e0ede3aa1ceb8/651d04415bb9107daa0fe14c_jP3L9koh5WkBiz7IhTQL4QsFhYtXUxWgthah8_KGslkGdzZ68wyQ6VzGgrI9QZvqEBMrWu6rKkIxnqsOSHnTusUXxNK2jZe7eRygGMjb72cbYiVkziooSE9LMS1tyq1fD5PR87V7zUJy-SHz_GAwfC0.png)
+
+![Image](https://javatechonline.com/wp-content/uploads/2020/09/Lombok1-1024x600.jpg)
+
+**Flow in one breath:**
+
+1. You add Lombok annotations (`@Getter`, `@Builder`, `@Data`, …).
+2. The compiler runs annotation processors.
+3. Lombok’s processor alters the AST (adds methods/constructors).
+4. Bytecode contains the generated code → runtime sees it as normal Java.
+
+---
+
+## What to be aware of when **writing code** with Lombok
+
+### 1) Don’t overuse `@Data`
+
+* `@Data` = getters + setters + `toString` + `equals/hashCode` + required constructor.
+* **Risk:** unintentionally exposes setters, wrong equality for entities/IDs.
+* **Rule:** prefer **explicit** annotations (`@Getter` + selective `@Setter`).
+
+### 2) `equals` / `hashCode` pitfalls
+
+* Lombok includes **all non-static fields by default**.
+* **Breaks** JPA entities, caches, Sets/Maps if IDs change.
+* **Fix:** use `@EqualsAndHashCode(onlyExplicitlyIncluded = true)`.
+
+### 3) Builders and defaults
+
+* `@Builder` **ignores field initializers**.
+* **Fix:** mark defaults with `@Builder.Default`.
+
+### 4) Constructors can surprise you
+
+* `@RequiredArgsConstructor` includes `final` and `@NonNull` fields.
+* Frameworks (Spring/JPA) may need a **no-args constructor**.
+* **Fix:** add `@NoArgsConstructor(force = true)` where required.
+
+### 5) Null-safety is shallow
+
+* `@NonNull` adds **null checks**, not validation logic.
+* It throws `NullPointerException` at runtime—no compile-time safety.
+
+### 6) Logging annotations hide dependencies
+
+* `@Slf4j` silently adds a logger field.
+* Be explicit in libraries or shared modules if logging style matters.
+
+---
+
+## What to be aware of when **testing code** with Lombok
+
+### 1) Test the behavior, not Lombok
+
+* Don’t write tests just to cover getters/setters.
+* Focus on **business logic**, invariants, and interactions.
+
+### 2) Mocking & reflection
+
+* Generated methods **exist only after compilation**.
+* Reflection-based tools (Jackson, Mockito, MapStruct) are fine **if** your IDE/build sees Lombok.
+* CI failures often mean **annotation processing is off**.
+
+### 3) IDE vs CI mismatch (common pain)
+
+* Code works locally, fails in CI.
+* **Cause:** annotation processing disabled in Maven/Gradle or IDE.
+* **Fix:** ensure Lombok is on `annotationProcessor` path.
+
+### 4) Debugging confusion
+
+* Stepping through code jumps into “invisible” methods.
+* Enable **“Delombok”** or IDE Lombok plugin for clarity.
+
+---
+
+## Build & tooling checklist (important)
+
+* **IDE plugin installed** (IntelliJ/Eclipse).
+* **Annotation processing enabled**.
+* **Pinned Lombok version** (avoid transitive surprises).
+* For libraries/SDKs: consider **delombok** in published sources.
+
+---
+
+## Strong opinions (earned from scars)
+
+* Lombok is great for **DTOs, configs, value objects**.
+* Be cautious in **domain entities, JPA models, public APIs**.
+* Explicit code beats magic when correctness and clarity matter.
+
+If you want, I can give you:
+
+* a **safe Lombok preset** for Spring/JPA projects, or
+* a **“Lombok-free” alternative style** that keeps code clean without magic.
