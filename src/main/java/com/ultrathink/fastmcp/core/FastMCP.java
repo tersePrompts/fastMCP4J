@@ -2,8 +2,6 @@ package com.ultrathink.fastmcp.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ultrathink.fastmcp.adapter.*;
-import com.ultrathink.fastmcp.annotations.*;
-import com.ultrathink.fastmcp.context.ElicitationContext;
 import com.ultrathink.fastmcp.model.*;
 import com.ultrathink.fastmcp.scanner.AnnotationScanner;
 import com.ultrathink.fastmcp.schema.SchemaGenerator;
@@ -98,9 +96,8 @@ public final class FastMCP {
         meta.getTools().forEach(t -> builder.tools(buildTool(t, instance)));
         meta.getResources().forEach(r -> builder.resources(buildResource(r, instance)));
         meta.getPrompts().forEach(p -> builder.prompts(buildPrompt(p, instance)));
-        
-    }
-}
+
+        return builder.build();
     }
 
     private void startJetty(HttpServlet servlet) throws Exception {
@@ -131,24 +128,47 @@ public final class FastMCP {
         return new McpServerFeatures.AsyncToolSpecification(tool, null, handler.asHandler());
     }
 
-    /**
-     * Handle notification requests according to MCP specification.
-     * Currently minimal implementation.
-     * TODO: Add full notification support when elicitation is implemented.
-     */
-    private Object handleNotification(McpAsyncServerExchange exchange, Object notification) {
-        // Custom implementation since MCP SDK doesn't have full notification support yet
-        return null; // No special handling needed
+    private McpServerFeatures.AsyncResourceSpecification buildResource(ResourceMeta resourceMeta, Object instance) {
+        var resource = McpSchema.Resource.builder()
+                .uri(resourceMeta.getUri())
+                .name(resourceMeta.getName())
+                .description(resourceMeta.getDescription())
+                .mimeType(resourceMeta.getMimeType())
+                .build();
+
+        var handler = new ResourceHandler(instance, resourceMeta, new ArgumentBinder(), new ResourceResponseMarshaller());
+        return new McpServerFeatures.AsyncResourceSpecification(resource, handler.asHandler());
     }
 
+    @SuppressWarnings("unchecked")
+    private McpServerFeatures.AsyncPromptSpecification buildPrompt(PromptMeta promptMeta, Object instance) {
+        Map<String, Object> s = schemaGenerator.generate(promptMeta.getMethod());
 
+        // Build prompt arguments from schema
+        List<McpSchema.PromptArgument> arguments = new ArrayList<>();
+        if (s.containsKey("properties")) {
+            Map<String, Object> properties = (Map<String, Object>) s.get("properties");
+            List<String> required = (List<String>) s.getOrDefault("required", List.of());
 
+            properties.forEach((name, propSchema) -> {
+                Map<String, Object> prop = (Map<String, Object>) propSchema;
+                arguments.add(new McpSchema.PromptArgument(
+                        name,
+                        (String) prop.getOrDefault("description", ""),
+                        required.contains(name)
+                ));
+            });
+        }
 
+        var prompt = new McpSchema.Prompt(
+                promptMeta.getName(),
+                promptMeta.getDescription(),
+                arguments.isEmpty() ? null : arguments
+        );
 
-    /**
-     * Process elicitation response and update context.
-     */
-
+        var handler = new PromptHandler(instance, promptMeta, new ArgumentBinder(), new PromptResponseMarshaller());
+        return new McpServerFeatures.AsyncPromptSpecification(prompt, handler.asHandler());
+    }
 
     private static McpTransportContext extractContext(HttpServletRequest req) {
         return McpTransportContext.create(Collections.list(req.getHeaderNames()).stream()
