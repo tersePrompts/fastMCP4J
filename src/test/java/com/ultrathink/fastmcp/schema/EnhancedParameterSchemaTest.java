@@ -2,6 +2,7 @@ package com.ultrathink.fastmcp.schema;
 
 import com.ultrathink.fastmcp.adapter.schema.SchemaGenerator;
 import com.ultrathink.fastmcp.annotations.scanner.AnnotationScanner;
+import com.ultrathink.fastmcp.example.ContextExampleServer;
 import com.ultrathink.fastmcp.model.ServerMeta;
 import com.ultrathink.fastmcp.model.ToolMeta;
 import com.ultrathink.fastmcp.test.EnhancedParameterServer;
@@ -120,5 +121,59 @@ public class EnhancedParameterSchemaTest {
         assertTrue(opDesc.contains("Hints: Use 'add' for addition"));
         assertEquals("Use 'add' for addition, 'subtract' for subtraction, etc.", operationParam.get("hints"));
         assertTrue(operationParam.containsKey("examples"));
+    }
+
+    @Test
+    void testContextParameterExcludedFromSchema() {
+        SchemaGenerator generator = new SchemaGenerator();
+        AnnotationScanner scanner = new AnnotationScanner();
+        ServerMeta meta = scanner.scan(ContextExampleServer.class);
+
+        // Test a method with Context parameter
+        ToolMeta processDataTool = meta.getTools().stream()
+            .filter(t -> t.getName().equals("processData"))
+            .findFirst()
+            .orElseThrow();
+
+        Map<String, Object> schema = generator.generate(processDataTool.getMethod());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+
+        // Only "input" should be in properties, not "ctx"
+        assertEquals(1, properties.size(), "Context parameter should be excluded from schema");
+        assertTrue(properties.containsKey("input"), "input parameter should be present");
+        assertFalse(properties.containsKey("ctx"), "ctx parameter should not be present");
+
+        // Test a method with only Context parameter
+        ToolMeta incrementCounterTool = meta.getTools().stream()
+            .filter(t -> t.getName().equals("incrementCounter"))
+            .findFirst()
+            .orElseThrow();
+
+        Map<String, Object> schema2 = generator.generate(incrementCounterTool.getMethod());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties2 = (Map<String, Object>) schema2.get("properties");
+
+        // Should be empty - only parameter is Context
+        assertTrue(properties2.isEmpty(), "Context-only method should have empty schema");
+
+        // Test a method with multiple parameters including Context
+        ToolMeta storeDataTool = meta.getTools().stream()
+            .filter(t -> t.getName().equals("storeData"))
+            .findFirst()
+            .orElseThrow();
+
+        Map<String, Object> schema3 = generator.generate(storeDataTool.getMethod());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties3 = (Map<String, Object>) schema3.get("properties");
+
+        // Only "key" and "value" should be present, not "ctx"
+        assertEquals(2, properties3.size(), "Should have exactly 2 client parameters");
+        assertTrue(properties3.containsKey("key"), "key parameter should be present");
+        assertTrue(properties3.containsKey("value"), "value parameter should be present");
+        assertFalse(properties3.containsKey("ctx"), "ctx parameter should not be present");
     }
 }

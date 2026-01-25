@@ -2,6 +2,7 @@ package com.ultrathink.fastmcp.example;
 
 import com.ultrathink.fastmcp.annotations.*;
 import com.ultrathink.fastmcp.context.Context;
+import com.ultrathink.fastmcp.context.McpContext;
 import com.ultrathink.fastmcp.core.FastMCP;
 import lombok.Getter;
 
@@ -109,6 +110,7 @@ public class EchoServer {
             required = true
         )
         String message,
+        @McpContext
         Context context
     ) {
         StringBuilder sb = new StringBuilder();

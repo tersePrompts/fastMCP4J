@@ -2,6 +2,7 @@ package com.ultrathink.fastmcp.adapter.schema;
 
 import com.ultrathink.fastmcp.exception.FastMcpException;
 import com.ultrathink.fastmcp.annotations.McpParam;
+import com.ultrathink.fastmcp.context.McpContext;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.lang.reflect.*;
 import java.util.*;
@@ -20,6 +21,11 @@ public class SchemaGenerator {
         List<String> required = new ArrayList<>();
 
         for (Parameter p : method.getParameters()) {
+            // Skip @McpContext annotated parameters - they're framework-injected, not client parameters
+            if (p.isAnnotationPresent(McpContext.class)) {
+                continue;
+            }
+
             String name = getParamName(p);
             Map<String, Object> pSchema = generateTypeSchema(p.getParameterizedType());
             
