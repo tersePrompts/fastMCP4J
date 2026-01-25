@@ -13,6 +13,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import reactor.core.publisher.Mono;
 import io.github.fastmcp.openapi.OpenApiGenerator;
 import io.github.fastmcp.notification.NotificationSender;
+import io.github.fastmcp.handler.*;
+import io.github.fastmcp.hook.HookManager;
 
 import java.lang.reflect.Method;
 import java.util.Map;
@@ -85,22 +87,21 @@ public class FastMCP {
 
     private class RealMcpAsyncServer implements McpAsyncServer {
         private ServerMeta meta;
+        private HookManager hookManager;
 
         RealMcpAsyncServer() {
             this.meta = scanner.scan(serverClass);
+            this.hookManager = new HookManager(serverInstance, meta.getTools());
         }
 
         @Override
         public void awaitTermination() {
-            // TODO: Implement actual server with MCP SDK
-            // For now, this is a placeholder that demonstrates the architecture
             System.out.println("FastMCP server started with " + meta.getTools().size() + " tools");
             System.out.println("Tools: " + meta.getTools().stream().map(ToolMeta::getName).toList());
         }
 
         @Override
         public void close() {
-            // TODO: Implement graceful shutdown
         }
 
         private Object createHandlerForTool(ToolMeta toolMeta) {
@@ -120,7 +121,8 @@ public class FastMCP {
                     serverInstance,
                     toolMeta,
                     binder,
-                    marshaller
+                    marshaller,
+                    hookManager
                 ).asHandler();
             }
         }

@@ -36,24 +36,42 @@ public class ToolHandler {
     private final ToolMeta meta;
     private final ArgumentBinder binder;
     private final ResponseMarshaller marshaller;
+    private final io.github.fastmcp.hook.HookManager hookManager;
 
-    public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder, ResponseMarshaller marshaller) {
+    public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder, ResponseMarshaller marshaller, io.github.fastmcp.hook.HookManager hookManager) {
         this.instance = instance;
         this.meta = meta;
         this.binder = binder;
         this.marshaller = marshaller;
+        this.hookManager = hookManager;
     }
 
     public BiFunction<McpAsyncServerExchange, CallToolRequest, Mono<CallToolResult>> asHandler() {
         return (exchange, request) -> {
             try {
                 Object[] args = binder.bind(meta.getMethod(), request.arguments());
+                
+                if (hookManager != null) {
+                    hookManager.executePreHooks(meta.getName(), request.arguments());
+                }
+                
                 Object result = meta.getMethod().invoke(instance, args);
 
+                CallToolResult callResult;
                 if (meta.isAsync()) {
-                    return ((Mono<?>) result).map(marshaller::marshal);
+                    return ((Mono<?>) result).map(r -> {
+                        CallToolResult res = marshaller.marshal(r);
+                        if (hookManager != null) {
+                            hookManager.executePostHooks(meta.getName(), request.arguments(), r);
+                        }
+                        return res;
+                    });
                 } else {
-                    return Mono.just(marshaller.marshal(result));
+                    callResult = marshaller.marshal(result);
+                    if (hookManager != null) {
+                        hookManager.executePostHooks(meta.getName(), request.arguments(), result);
+                    }
+                    return Mono.just(callResult);
                 }
             } catch (Exception e) {
                 return Mono.just(errorResult(e));
