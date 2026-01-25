@@ -21,7 +21,8 @@
       "Bash(git checkout:*)",
       "Bash(git merge feature/resource-prompt-handlers-and-enhanced-params --no-ff -m \"$\\(cat <<''EOF''\nMerge feature/resource-prompt-handlers-and-enhanced-params\n\nThis merge adds comprehensive support for MCP resources, prompts, and enhanced\nparameter descriptions to fastMCP4J.\n\nFeatures:\n- ResourceHandler and PromptHandler implementations for MCP protocol\n- @McpParam annotation for rich parameter metadata \\(descriptions, examples, constraints\\)\n- Enhanced JSON schema generation with LLM-friendly hints\n- Full test coverage with all 27 tests passing\n\nCommits:\n- feat: Implement ResourceHandler, PromptHandler, and enhanced parameter descriptions\n- feat: ResourceHandler and PromptHandler implementations\n- fix: Complete ResourceHandler and PromptHandler integration\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git push:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(git log:*)"
     ]
   }
 }

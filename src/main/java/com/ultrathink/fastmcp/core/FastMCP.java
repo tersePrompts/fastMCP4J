@@ -5,7 +5,9 @@ import com.ultrathink.fastmcp.adapter.*;
 import com.ultrathink.fastmcp.annotations.McpMemory;
 import com.ultrathink.fastmcp.annotations.McpTodo;
 import com.ultrathink.fastmcp.annotations.McpPlanner;
+import com.ultrathink.fastmcp.annotations.McpFileWrite;
 import com.ultrathink.fastmcp.hook.HookManager;
+import com.ultrathink.fastmcp.filewrite.FileWriteTool;
 import com.ultrathink.fastmcp.memory.InMemoryMemoryStore;
 import com.ultrathink.fastmcp.memory.MemoryStore;
 import com.ultrathink.fastmcp.memory.MemoryTool;
@@ -183,6 +185,13 @@ public final class FastMCP {
             PlannerTool plannerTool = new PlannerTool(planStoreInstance);
             ServerMeta plannerMeta = scanner.scan(PlannerTool.class);
             plannerMeta.getTools().forEach(t -> builder.tools(buildTool(t, plannerTool, null)));
+        }
+
+        // Register file write tools if @McpFileWrite annotation is present
+        if (serverClass.isAnnotationPresent(McpFileWrite.class)) {
+            FileWriteTool fileWriteTool = new FileWriteTool();
+            ServerMeta fileWriteMeta = scanner.scan(FileWriteTool.class);
+            fileWriteMeta.getTools().forEach(t -> builder.tools(buildTool(t, fileWriteTool, null)));
         }
 
         return builder.build();
