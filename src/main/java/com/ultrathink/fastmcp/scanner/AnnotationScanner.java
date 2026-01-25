@@ -31,6 +31,14 @@ public class AnnotationScanner {
         );
     }
 
+    /**
+     * Scan tools from a class without requiring @McpServer annotation.
+     * Useful for built-in tool classes like TodoTool, PlannerTool, etc.
+     */
+    public List<ToolMeta> scanToolsOnly(Class<?> clazz) {
+        return scanTools(clazz);
+    }
+
     private List<ToolMeta> scanTools(Class<?> clazz) {
         return Arrays.stream(clazz.getDeclaredMethods())
             .filter(m -> m.isAnnotationPresent(McpTool.class))
@@ -101,24 +109,67 @@ public class AnnotationScanner {
 
     /**
      * Parses a single icon string into an Icon object.
+     * Format: <url>[:<mimeType>[:<sizes>[:<theme>]]]
+     * Examples:
+     *   "https://example.com/icon.png"
+     *   "https://example.com/icon.png:image/png:48x48:light"
+     *   "data:image/svg+xml;base64,ABC...:any"
      */
     private Icon parseIcon(String iconString) {
-        String[] parts = iconString.split(":", 4);
-        
-        String src = parts[0].trim();
-        String mimeType = parts.length > 1 ? parts[1].trim() : null;
-        String sizes = parts.length > 2 ? parts[2].trim() : null;
-        String theme = parts.length > 3 ? parts[3].trim() : null;
+        // Parse from right to left since optional parts are at the end
+        // This handles URLs that contain colons (like https://)
 
-        List<String> sizeList = sizes != null && !sizes.isEmpty() 
+        String theme = null;
+        String sizes = null;
+        String mimeType = null;
+        String src = iconString;
+
+        // 1. Extract theme (last segment if it's "light" or "dark")
+        int lastColon = src.lastIndexOf(':');
+        if (lastColon > 0) {
+            String possibleTheme = src.substring(lastColon + 1).trim();
+            if ("light".equals(possibleTheme) || "dark".equals(possibleTheme)) {
+                theme = possibleTheme;
+                src = src.substring(0, lastColon);
+            }
+        }
+
+        // 2. Extract sizes (segment before theme if it matches size pattern)
+        lastColon = src.lastIndexOf(':');
+        if (lastColon > 0) {
+            String possibleSizes = src.substring(lastColon + 1).trim();
+            // Check if it looks like sizes (contains 'x' for dimensions or is "any")
+            if (possibleSizes.equals("any") || possibleSizes.matches("\\d+x\\d+(,\\d+x\\d+)*")) {
+                sizes = possibleSizes;
+                src = src.substring(0, lastColon);
+            }
+        }
+
+        // 3. Extract MIME type (segment before sizes if it looks like a MIME type)
+        lastColon = src.lastIndexOf(':');
+        if (lastColon > 0) {
+            String possibleMimeType = src.substring(lastColon + 1).trim();
+            // Check if it looks like a MIME type (contains '/' or common image types)
+            if (possibleMimeType.contains("/") ||
+                "image/svg+xml".equals(possibleMimeType) ||
+                "application/octet-stream".equals(possibleMimeType)) {
+                mimeType = possibleMimeType;
+                src = src.substring(0, lastColon);
+            }
+        }
+
+        // 4. Whatever remains is the URL/src
+        src = src.trim();
+
+        List<String> sizeList = sizes != null && !sizes.isEmpty()
             ? Arrays.asList(sizes.split(","))
             : null;
 
         Icon icon = new Icon(src, mimeType, sizeList, theme);
-        
+
         // Validate the icon according to MCP security requirements
         IconValidator.validate(icon);
-        
+
         return icon;
     }
 

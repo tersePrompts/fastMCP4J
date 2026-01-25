@@ -177,30 +177,30 @@ public final class FastMCP {
         if (serverClass.isAnnotationPresent(McpTodo.class)) {
             TodoStore todoStoreInstance = todoStore != null ? todoStore : new InMemoryTodoStore();
             TodoTool todoTool = new TodoTool(todoStoreInstance);
-            ServerMeta todoMeta = scanner.scan(TodoTool.class);
-            todoMeta.getTools().forEach(t -> builder.tools(buildTool(t, todoTool, null)));
+            List<ToolMeta> todoTools = scanner.scanToolsOnly(TodoTool.class);
+            todoTools.forEach(t -> builder.tools(buildTool(t, todoTool, null)));
         }
 
         // Register planner tools if @McpPlanner annotation is present
         if (serverClass.isAnnotationPresent(McpPlanner.class)) {
             PlanStore planStoreInstance = planStore != null ? planStore : new InMemoryPlanStore();
             PlannerTool plannerTool = new PlannerTool(planStoreInstance);
-            ServerMeta plannerMeta = scanner.scan(PlannerTool.class);
-            plannerMeta.getTools().forEach(t -> builder.tools(buildTool(t, plannerTool, null)));
+            List<ToolMeta> plannerTools = scanner.scanToolsOnly(PlannerTool.class);
+            plannerTools.forEach(t -> builder.tools(buildTool(t, plannerTool, null)));
         }
 
         // Register file read tools if @McpFileRead annotation is present
         if (serverClass.isAnnotationPresent(McpFileRead.class)) {
             FileReadTool fileReadTool = new FileReadTool();
-            ServerMeta fileReadMeta = scanner.scan(FileReadTool.class);
-            fileReadMeta.getTools().forEach(t -> builder.tools(buildTool(t, fileReadTool, null)));
+            List<ToolMeta> fileReadTools = scanner.scanToolsOnly(FileReadTool.class);
+            fileReadTools.forEach(t -> builder.tools(buildTool(t, fileReadTool, null)));
         }
 
         // Register file write tools if @McpFileWrite annotation is present
         if (serverClass.isAnnotationPresent(McpFileWrite.class)) {
             FileWriteTool fileWriteTool = new FileWriteTool();
-            ServerMeta fileWriteMeta = scanner.scan(FileWriteTool.class);
-            fileWriteMeta.getTools().forEach(t -> builder.tools(buildTool(t, fileWriteTool, null)));
+            List<ToolMeta> fileWriteTools = scanner.scanToolsOnly(FileWriteTool.class);
+            fileWriteTools.forEach(t -> builder.tools(buildTool(t, fileWriteTool, null)));
         }
 
         return builder.build();
