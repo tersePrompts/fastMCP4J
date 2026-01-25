@@ -2,12 +2,31 @@ package com.ultrathink.fastmcp.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ultrathink.fastmcp.adapter.*;
+import com.ultrathink.fastmcp.annotations.McpMemory;
+import com.ultrathink.fastmcp.annotations.McpTodo;
+import com.ultrathink.fastmcp.annotations.McpPlanner;
+import com.ultrathink.fastmcp.annotations.McpServer;
+import com.ultrathink.fastmcp.memory.InMemoryMemoryStore;
+import com.ultrathink.fastmcp.memory.MemoryStore;
+import com.ultrathink.fastmcp.memory.MemoryTool;
+import com.ultrathink.fastmcp.planner.InMemoryPlanStore;
+import com.ultrathink.fastmcp.planner.PlanStore;
+import com.ultrathink.fastmcp.planner.PlannerTool;
+import com.ultrathink.fastmcp.todo.InMemoryTodoStore;
+import com.ultrathink.fastmcp.todo.TodoStore;
+import com.ultrathink.fastmcp.todo.TodoTool;
 import com.ultrathink.fastmcp.model.*;
 import com.ultrathink.fastmcp.scanner.AnnotationScanner;
 import com.ultrathink.fastmcp.schema.SchemaGenerator;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
-import io.modelcontextprotocol.server.*;
+import io.modelcontextprotocol.server.McpAsyncServer;
+import io.modelcontextprotocol.server.McpServer;
+import io.modelcontextprotocol.server.McpServer.AsyncSpecification;
+import io.modelcontextprotocol.server.StdioServerTransportProvider;
+import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
+import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
+import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.transport.*;
 import io.modelcontextprotocol.spec.*;
 import jakarta.servlet.http.HttpServlet;
@@ -29,6 +48,10 @@ public final class FastMCP {
     private int port = 8080;
     private String mcpUri = "/mcp";
     private Server jetty;
+    
+    private MemoryStore memoryStore;
+    private TodoStore todoStore;
+    private PlanStore planStore;
 
     private FastMCP(Class<?> serverClass) { this.serverClass = serverClass; }
     public static FastMCP server(Class<?> clazz) { return new FastMCP(clazz); }
@@ -39,6 +62,24 @@ public final class FastMCP {
     public FastMCP streamable() { this.transport = TransportType.HTTP_STREAMABLE; return this; }
     public FastMCP port(int p) { this.port = p; return this; }
     public FastMCP mcpUri(String u) { this.mcpUri = u.startsWith("/") ? u : "/" + u; return this; }
+    
+    /**
+     * Set a custom MemoryStore implementation.
+     * Default is InMemoryMemoryStore.
+     */
+    public FastMCP memoryStore(MemoryStore store) { this.memoryStore = store; return this; }
+    
+    /**
+     * Set a custom TodoStore implementation.
+     * Default is InMemoryTodoStore.
+     */
+    public FastMCP todoStore(TodoStore store) { this.todoStore = store; return this; }
+    
+    /**
+     * Set a custom PlanStore implementation.
+     * Default is InMemoryPlanStore.
+     */
+    public FastMCP planStore(PlanStore store) { this.planStore = store; return this; }
 
     public void run() {
         try {
@@ -62,7 +103,7 @@ public final class FastMCP {
         var mapper = new JacksonMcpJsonMapper(new ObjectMapper());
 
         McpServer.AsyncSpecification<?> builder = switch (transport) {
-            case STDIO -> McpServer.async(new StdioServerTransportProvider(mapper));
+            case STDIO -> io.modelcontextprotocol.server.McpServer.async(new StdioServerTransportProvider(mapper));
 
             case HTTP_SSE -> {
                 var p = HttpServletSseServerTransportProvider.builder()
@@ -70,7 +111,7 @@ public final class FastMCP {
                         //here the endpoint is - /mcp/sse
                         .contextExtractor(FastMCP::extractContext).build();
                 startJetty(p);
-                yield McpServer.async(p);
+                yield io.modelcontextprotocol.server.McpServer.async(p);
             }
 
             case HTTP_STREAMABLE -> {
@@ -80,7 +121,7 @@ public final class FastMCP {
                         .keepAliveInterval(Duration.ofSeconds(30))
                         .build();
                 startJetty(p);
-                yield McpServer.async(p);
+                yield io.modelcontextprotocol.server.McpServer.async(p);
             }
         };
 
@@ -96,6 +137,47 @@ public final class FastMCP {
         meta.getTools().forEach(t -> builder.tools(buildTool(t, instance)));
         meta.getResources().forEach(r -> builder.resources(buildResource(r, instance)));
         meta.getPrompts().forEach(p -> builder.prompts(buildPrompt(p, instance)));
+
+        // Register memory tool if @McpMemory annotation is present
+        if (serverClass.isAnnotationPresent(McpMemory.class)) {
+            MemoryStore store = memoryStore != null ? memoryStore : new InMemoryMemoryStore();
+            MemoryTool memoryTool = new MemoryTool(store);
+            String toolSchema = memoryTool.getToolSchema();
+            Map<String, Object> schemaMap = (Map<String, Object>) parseJsonSchema(toolSchema);
+
+            var tool = McpSchema.Tool.builder()
+                    .name("memory")
+                    .description("Memory tool for persistent storage and retrieval of information")
+                    .inputSchema(new McpSchema.JsonSchema(
+                        (String) schemaMap.getOrDefault("type", "object"),
+                        (Map<String, Object>) schemaMap.getOrDefault("properties", Map.of()),
+                        (List<String>) schemaMap.getOrDefault("required", List.of()),
+                        null, null, null))
+                    .build();
+            builder.tools(
+                new McpServerFeatures.AsyncToolSpecification(
+                    tool,
+                    null,
+                    (exchange, args) -> memoryTool.handleToolCall(exchange, args)
+                )
+            );
+        }
+
+        // Register todo tools if @McpTodo annotation is present
+        if (serverClass.isAnnotationPresent(McpTodo.class)) {
+            TodoStore todoStoreInstance = todoStore != null ? todoStore : new InMemoryTodoStore();
+            TodoTool todoTool = new TodoTool(todoStoreInstance);
+            ServerMeta todoMeta = scanner.scan(TodoTool.class);
+            todoMeta.getTools().forEach(t -> builder.tools(buildTool(t, todoTool)));
+        }
+
+        // Register planner tools if @McpPlanner annotation is present
+        if (serverClass.isAnnotationPresent(McpPlanner.class)) {
+            PlanStore planStoreInstance = planStore != null ? planStore : new InMemoryPlanStore();
+            PlannerTool plannerTool = new PlannerTool(planStoreInstance);
+            ServerMeta plannerMeta = scanner.scan(PlannerTool.class);
+            plannerMeta.getTools().forEach(t -> builder.tools(buildTool(t, plannerTool)));
+        }
 
         return builder.build();
     }
@@ -173,5 +255,14 @@ public final class FastMCP {
     private static McpTransportContext extractContext(HttpServletRequest req) {
         return McpTransportContext.create(Collections.list(req.getHeaderNames()).stream()
                 .collect(Collectors.toMap(Function.identity(), req::getHeader, (a, b) -> a)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object parseJsonSchema(String schema) {
+        try {
+            return new ObjectMapper().readValue(schema, Map.class);
+        } catch (Exception e) {
+            return Map.of();
+        }
     }
 }

@@ -45,6 +45,7 @@ public class CalculatorServer {
 - **Resources** - `@McpResource` for exposing data/content
 - **Prompts** - `@McpPrompt` for LLM interaction templates
 - **Enhanced Parameters** - `@McpParam` with descriptions, examples, constraints, hints, and defaults
+- **Memory** - `@McpMemory` for persistent storage and cross-session learning
 
 ### Transport & Runtime ✅
 - **Multiple transports** - stdio, Server-Sent Events (SSE), HTTP Streamable
@@ -218,6 +219,49 @@ public Mono<String> processData(String datasetId) {
 }
 ```
 
+### Memory Tool
+
+```java
+@McpServer(name = "LearningBot", version = "1.0.0")
+@McpMemory  // Enable memory for persistent storage
+public class LearningServer {
+
+    @McpTool(description = "Remember information")
+    public String remember(
+        @McpParam(description = "Information to remember")
+        String info
+    ) {
+        return "I'll remember: " + info;
+    }
+
+    @McpTool(description = "Recall information")
+    public String recall(String topic) {
+        // AI can use memory tool to retrieve stored information
+        return "Recalling info about: " + topic;
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(LearningServer.class)
+            .stdio()
+            .run();
+    }
+}
+```
+
+The `@McpMemory` annotation enables a memory tool that allows AI agents to persist information across sessions. You can also customize the memory store:
+
+```java
+public static void main(String[] args) {
+    // Custom memory store with 50MB file size limit
+    MemoryStore customStore = new InMemoryMemoryStore("/memories", 50_000_000);
+
+    FastMCP.server(LearningServer.class)
+        .memoryStore(customStore)
+        .stdio()
+        .run();
+}
+```
+
 ### Complete Server Example
 
 See [EchoServer.java](src/test/java/com/ultrathink/fastmcp/example/EchoServer.java) for a comprehensive example demonstrating all features.
@@ -254,6 +298,7 @@ mvn exec:java -Dexec.mainClass="com.ultrathink.fastmcp.example.EchoServer"
 
 ## Documentation
 
+- [Memory Tool Guide](docs/memory-tool.md)
 - [Enhanced Parameters Guide](docs/enhanced-parameters.md)
 - [API Documentation](PLAN.md) (Implementation details)
 
