@@ -322,7 +322,7 @@ public final class FastMCP {
             registerPrompts(builder, meta, instance);
             registerBuiltinTools(builder);
 
-            McpAsyncServer server = (McpAsyncServer) ((Function<?, ?>) builder).apply(null);
+            McpAsyncServer server = (McpAsyncServer) builder.getClass().getMethod("build").invoke(builder);
             // Start Jetty after session factory is set
             if (sseProvider != null) startJetty(sseProvider);
             else if (streamableProvider != null) startJetty(streamableProvider);
@@ -506,7 +506,15 @@ public final class FastMCP {
     }
 
     private void startJetty(HttpServletSseServerTransportProvider provider) throws Exception {
-        startJetty((HttpServlet) provider);
+        jetty = new Server(port);
+        ServletContextHandler ctx = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
+        ServletHolder holder = new ServletHolder(provider);
+        holder.setAsyncSupported(true);
+        // SSE requires two endpoints: /sse for GET (SSE connection) and /mcp for POST (messages)
+        ctx.addServlet(holder, "/sse/*");
+        ctx.addServlet(holder, mcpUri + "/*");
+        jetty.setHandler(ctx);
+        jetty.start();
     }
 
     private void startJetty(HttpServletStreamableServerTransportProvider provider) throws Exception {
