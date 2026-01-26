@@ -1206,7 +1206,7 @@ CHUNK 2: Model ──────> CHUNK 3: Scanner
     <dependency>
         <groupId>io.modelcontextprotocol.sdk</groupId>
         <artifactId>mcp</artifactId>
-        <version>0.16.0</version>
+        <version>0.17.2</version>
     </dependency>
 
     <!-- Jackson -->

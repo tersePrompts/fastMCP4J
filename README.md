@@ -6,7 +6,7 @@
 
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
 [![Maven](https://img.shields.io/badge/Maven-3.8+-red.svg)](https://maven.apache.org/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-168%20Passing-brightgreen.svg)](src/test/java)
 
 Bringing the simplicity of [FastMCP](https://gofastmcp.com) to Java — reduce boilerplate from 30+ lines to ~10 lines per MCP server.
@@ -498,9 +498,12 @@ mvn exec:java -Dexec.mainClass="com.ultrathink.fastmcp.example.EchoServer"
 
 ## Documentation
 
-- [Memory Tool Guide](docs/memory-tool.md)
-- [Enhanced Parameters Guide](docs/enhanced-parameters.md)
+- [Architecture Overview](ARCHITECTURE.md)
 - [API Documentation](PLAN.md)
+- [Roadmap](ROADMAP.md)
+- [Contributing Guidelines](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+- [Security Policy](SECURITY.md)
 
 ---
 
@@ -518,7 +521,7 @@ Areas of focus:
 
 ## License
 
-Apache License 2.0
+MIT License
 
 ---
 

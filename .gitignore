@@ -41,3 +41,15 @@ mcp-servers/*/node_modules/
 .mcp-decompile-cache/
 .mcp-class-temp/
 
+# Python
+*.pyc
+__pycache__/
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Misc
+.mcp.json
+cp.txt

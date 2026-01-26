@@ -63,7 +63,10 @@ public class ContextImpl implements Context {
     @Override
     public List<ResourceInfo> listResources() {
         log.debug("Listing resources");
-        // TODO: Integrate with actual server resource registry
+        // NOTE: Resources feature will be implemented in a future release.
+        // This requires integrating with a server-wide ResourceRegistry that tracks
+        // all registered resources and their metadata. The registry will need to be
+        // passed to ContextImpl during construction.
         return List.of();
     }
     
@@ -71,21 +74,28 @@ public class ContextImpl implements Context {
     public String readResource(String uri) {
         log.debug("Reading resource: {}", uri);
         notificationHelper.sendResourceChange("read", uri);
-        // TODO: Implement actual resource reading
+        // NOTE: Resource reading will be implemented in a future release.
+        // This requires delegating to the appropriate ResourceHandler based on URI scheme,
+        // which is managed by the ResourceRegistry. Until then, returns a placeholder.
         return "Resource content for: " + uri;
     }
     
     @Override
     public List<PromptInfo> listPrompts() {
         log.debug("Listing prompts");
-        // TODO: Integrate with actual server prompt registry
+        // NOTE: Prompts feature will be implemented in a future release.
+        // This requires integrating with a server-wide PromptRegistry that tracks
+        // all registered prompts and their metadata. The registry will need to be
+        // passed to ContextImpl during construction.
         return List.of();
     }
     
     @Override
     public PromptResult getPrompt(String name, Map<String, Object> arguments) {
         log.debug("Getting prompt: {} with arguments: {}", name, arguments);
-        // TODO: Implement actual prompt retrieval
+        // NOTE: Prompt retrieval will be implemented in a future release.
+        // This requires delegating to the appropriate PromptHandler based on name,
+        // which is managed by the PromptRegistry. Until then, returns a placeholder.
         List<PromptMessage> messages = List.of(
             new PromptMessage("user", "This is a placeholder prompt for: " + name)
         );

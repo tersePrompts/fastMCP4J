@@ -108,7 +108,7 @@ public class ToolHandler {
             UUID.randomUUID().toString(), // requestId
             getClientId(exchange),       // clientId
             sessionId,                  // sessionId
-            "stdio",                    // transport (TODO: determine from exchange)
+            getTransportType(exchange),  // transport
             getMetadata(exchange)         // meta
         );
         
@@ -131,15 +131,50 @@ public class ToolHandler {
         ContextImpl.clearCurrentContext();
         com.ultrathink.fastmcp.core.FastMCP.clearTransportContext();
     }
-    
+
+    /**
+     * Determine the transport type from the MCP exchange.
+     * NOTE: The MCP SDK (io.modelcontextprotocol.server.McpAsyncServerExchange)
+     * does not currently expose the underlying transport type. This is a limitation
+     * of the SDK - once it provides a method like getTransportType(), we should
+     * update this implementation to use it. For now, we detect from transport context.
+     */
+    private String getTransportType(McpAsyncServerExchange exchange) {
+        Map<String, String> ctx = com.ultrathink.fastmcp.core.FastMCP.getTransportContext();
+        if (ctx != null && ctx.containsKey("_transport")) {
+            return ctx.get("_transport");
+        }
+        return "stdio";  // Default transport
+    }
+
+    /**
+     * Get a unique session identifier for the current exchange.
+     * NOTE: The MCP SDK does not currently expose session IDs directly.
+     * We use thread ID as a proxy since stdio connections are typically
+     * 1:1 with threads. For HTTP/SSE, proper session tracking would be needed.
+     * Future SDK versions may provide exchange.getSessionId().
+     */
     private String getSessionId(McpAsyncServerExchange exchange) {
-        // Generate session ID based on thread
-        // TODO: Once MCP SDK provides session ID access, use exchange.getSessionId()
+        Map<String, String> ctx = com.ultrathink.fastmcp.core.FastMCP.getTransportContext();
+        if (ctx != null && ctx.containsKey("_sessionId")) {
+            return ctx.get("_sessionId");
+        }
+        // Generate session ID based on thread as fallback
         return "session-" + Thread.currentThread().getId();
     }
-    
+
+    /**
+     * Get the client identifier for the current exchange.
+     * NOTE: The MCP SDK does not currently expose client IDs.
+     * For stdio, this is typically the connected process. For HTTP, this would
+     * be extracted from headers or authentication. Future SDK versions may
+     * provide exchange.getClientId().
+     */
     private String getClientId(McpAsyncServerExchange exchange) {
-        // TODO: Once MCP SDK provides client ID access, use exchange.getClientId()
+        Map<String, String> ctx = com.ultrathink.fastmcp.core.FastMCP.getTransportContext();
+        if (ctx != null && ctx.containsKey("_clientId")) {
+            return ctx.get("_clientId");
+        }
         return "client-unknown";
     }
     
