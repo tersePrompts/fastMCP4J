@@ -24,7 +24,7 @@ Just annotate and run. See below →
 **Maven:**
 ```xml
 <dependency>
-    <groupId>com.ultrathink.fastmcp</groupId>
+    <groupId>io.github.terseprompts</groupId>
     <artifactId>fastmcp-java</artifactId>
     <version>0.2.0</version>
 </dependency>
@@ -32,7 +32,7 @@ Just annotate and run. See below →
 
 **Gradle:**
 ```groovy
-implementation 'com.ultrathink.fastmcp:fastmcp-java:0.2.0'
+implementation 'io.github.terseprompts:fastmcp-java:0.2.0'
 ```
 
 ### Create your server

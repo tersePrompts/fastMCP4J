@@ -5,7 +5,7 @@
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.ultrathink.fastmcp</groupId>
+    <groupId>io.github.terseprompts</groupId>
     <artifactId>fastmcp-java</artifactId>
     <version>0.2.0</version>
     <packaging>jar</packaging>
