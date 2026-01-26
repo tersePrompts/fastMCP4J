@@ -135,27 +135,7 @@ FastMCP.server(MyServer.class)
     .run();
 ```
 
-### Use with Claude Desktop
-
-Add to `claude_desktop_config.json`:
-
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "transport": {
-        "type": "http_streamable",
-        "url": "http://localhost:3000/mcp"
-      }
-    }
-  }
-}
-```
-
-### Use with Claude Code
+### Claude Code
 
 ```bash
 Claude mcp add --transport http myserver http://localhost:3000/mcp
@@ -256,6 +236,11 @@ public class MyServer {
     @McpTool(description = "Read file with context")
     public String readFile(@McpContext Context context, String path) {
         context.info("Reading file: " + path);
+
+        // Access request headers (e.g., for auth)
+        Map<String, String> headers = context.getRequestHeaders();
+        String authHeader = headers.get("Authorization");
+
         // ... read file
         return "Content";
     }
@@ -270,6 +255,7 @@ public class MyServer {
 - `getClientId()` — Client identifier
 - `getSessionId()` — Session identifier
 - `getToolName()` — Current tool name
+- `getRequestHeaders()` — Client request headers (e.g., auth tokens, custom headers)
 - `info(String)` — Log info message
 - `warning(String)` — Log warning
 - `error(String)` — Log error
