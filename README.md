@@ -274,7 +274,6 @@ mvn test
 ## Documentation
 
 - [Architecture](ARCHITECTURE.md) — How it works
-- [API Docs](PLAN.md) — Implementation details
 - [Roadmap](ROADMAP.md) — What's next
 - [Contributing](CONTRIBUTING.md) — PRs welcome
 

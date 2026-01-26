@@ -295,7 +295,7 @@ That's the point.
 
 - Human docs: [README.md](README.md)
 - Architecture: [ARCHITECTURE.md)
-- API: [PLAN.md](PLAN.md)
+- Architecture: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Maven Central: (coming soon)
 
 ---
