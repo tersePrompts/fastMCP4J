@@ -6,23 +6,24 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Annotation to enable Todo tool for the MCP server.
+ * Enable Todo tool — AI can track, update, and manage tasks.
  * <p>
- * When present on a class annotated with {@link McpServer}, the Todo tool
- * will be automatically registered. The tool provides task management capabilities
- * including adding, listing, updating, and deleting todos.
+ * Add this annotation to your {@link McpServer} class. AI gets:
+ * <ul>
+ *   <li>add — Create tasks with priority</li>
+ *   <li>list — View all tasks</li>
+ *   <li>updateStatus — Mark tasks done/in-progress</li>
+ *   <li>updateTask — Edit task details</li>
+ *   <li>delete — Remove tasks</li>
+ * </ul>
  * <p>
  * Example:
  * <pre>{@code
  * @McpServer(name = "MyServer")
- * @McpTodo
+ * @McpTodo  // AI can now manage tasks
  * public class MyServer {
- *     // Custom business tools
- *     
  *     public static void main(String[] args) {
- *         FastMCP.server(MyServer.class)
- *             .stdio()
- *             .run();
+ *         FastMCP.server(MyServer.class).run();
  *     }
  * }
  * }</pre>

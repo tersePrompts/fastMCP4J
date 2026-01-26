@@ -11,6 +11,22 @@
 
 **Zero bloat. 12 dependencies. No containers.**
 
+```
+┌─────────────────────────────────────────────────────────────┐
+│  BEFORE: Raw MCP SDK            AFTER: FastMCP4J             │
+│                                                              │
+│  35+ lines of boilerplate    →    @McpTool                  │
+│  Manual schema building     →    int add(int a, int b) {    │
+│  Transport provider setup   →        return a + b;           │
+│  Handler registration       →    }                          │
+│  Error handling             →    FastMCP.server()           │
+│                              →        .run();                │
+│                                                              │
+│  ~350 characters            →    ~80 characters              │
+│  1 jar + boilerplate         →    12 jars, zero bloat        │
+└─────────────────────────────────────────────────────────────┘
+```
+
 Just annotate and run. See below →
 
 </div>

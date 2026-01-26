@@ -6,32 +6,29 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Enables file writing capabilities for the MCP server.
- *
- * When this annotation is present on a server class, the following tools are registered:
- * - write_file: Write content to a file (create or overwrite)
- * - append_file: Append content to a file
- * - write_lines: Write lines to a file
- * - append_lines: Append lines to a file
- * - delete_file: Delete a file
- * - create_directory: Create a directory
- *
- * Security features:
- * - Path validation to prevent directory traversal
- * - File size limits (10MB default)
- * - Line count limits (100,000 default)
- * - Parent directory creation control
- *
+ * Enable File Write tool — AI writes and creates files.
+ * <p>
+ * AI gets:
+ * <ul>
+ *   <li>write_file — Create/overwrite</li>
+ *   <li>append_file — Append content</li>
+ *   <li>write_lines — Bulk write</li>
+ *   <li>delete_file — Remove files</li>
+ *   <li>create_directory — Make dirs</li>
+ * </ul>
+ * <p>
+ * Path-validated, size-limited (10MB), line-limited (100k).
+ * <p>
  * Example:
- * <pre>
- * {@code
+ * <pre>{@code
  * @McpServer(name = "MyServer")
- * @McpFileWrite
+ * @McpFileWrite  // AI writes files
  * public class MyServer {
- *     // Your tools here
+ *     public static void main(String[] args) {
+ *         FastMCP.server(MyServer.class).run();
+ *     }
  * }
- * }
- * </pre>
+ * }</pre>
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)

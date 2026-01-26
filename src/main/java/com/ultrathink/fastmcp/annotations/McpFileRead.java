@@ -6,30 +6,28 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Enables file reading capabilities for the MCP server.
- *
- * When this annotation is present on a server class, the following tools are registered:
- * - read_lines: Read a range of lines from a file
- * - read_file: Read entire file content
- * - grep: Search for pattern in files
- * - file_stats: Get file metadata (size, modified date, etc.)
- *
- * Security features:
- * - No file writing operations
- * - Path validation to prevent directory traversal
- * - File size limits
- * - Read-only operations
- *
+ * Enable File Read tool — AI reads your codebase.
+ * <p>
+ * AI gets:
+ * <ul>
+ *   <li>read_lines — Read ranges</li>
+ *   <li>read_file — Full file</li>
+ *   <li>grep — Search patterns</li>
+ *   <li>file_stats — Metadata</li>
+ * </ul>
+ * <p>
+ * Read-only, path-validated, size-limited.
+ * <p>
  * Example:
- * <pre>
- * {@code
+ * <pre>{@code
  * @McpServer(name = "MyServer")
- * @McpFileRead
+ * @McpFileRead  // AI reads files
  * public class MyServer {
- *     // Your tools here
+ *     public static void main(String[] args) {
+ *         FastMCP.server(MyServer.class).run();
+ *     }
  * }
- * }
- * </pre>
+ * }</pre>
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
