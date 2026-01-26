@@ -193,6 +193,92 @@ Add ONE annotation, get complete functionality.
 
 ---
 
+## Hooks — Run Code Before/After Tools
+
+**@McpPreHook** — Runs before any tool is called.
+
+**@McpPostHook** — Runs after any tool completes.
+
+Use for logging, validation, metrics, audit trails.
+
+```java
+@McpServer(name = "MyServer", version = "1.0")
+public class MyServer {
+
+    @McpTool(description = "Calculate")
+    public int calculate(int x, int y) {
+        return x + y;
+    }
+
+    @McpPreHook
+    void logBefore(ToolContext ctx) {
+        System.out.println("Starting: " + ctx.getToolName());
+    }
+
+    @McpPostHook
+    void logAfter(ToolContext ctx) {
+        System.out.println("Finished: " + ctx.getToolName());
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(MyServer.class).stdio().run();
+    }
+}
+```
+
+**Available in ToolContext:**
+- `getToolName()` — Name of the tool being called
+- `getArguments()` — Arguments passed to the tool
+- `getStartTime()` — When the tool started
+
+---
+
+## Context Access — Request Metadata
+
+**@McpContext** — Inject request context into your tool.
+
+Access client info, session data, request metadata.
+
+```java
+@McpServer(name = "MyServer", version = "1.0")
+public class MyServer {
+
+    @McpTool(description = "Get client info")
+    public String getClientInfo(@McpContext Context context) {
+        return "Client: " + context.getClientId();
+    }
+
+    @McpTool(description = "Get session ID")
+    public String getSessionId(@McpContext Context context) {
+        return "Session: " + context.getSessionId();
+    }
+
+    @McpTool(description = "Read file with context")
+    public String readFile(@McpContext Context context, String path) {
+        context.info("Reading file: " + path);
+        // ... read file
+        return "Content";
+    }
+
+    public static void main(String[] args) {
+        FastMCP.server(MyServer.class).stdio().run();
+    }
+}
+```
+
+**Context capabilities:**
+- `getClientId()` — Client identifier
+- `getSessionId()` — Session identifier
+- `getToolName()` — Current tool name
+- `info(String)` — Log info message
+- `warning(String)` — Log warning
+- `error(String)` — Log error
+- `reportProgress(int, String)` — Report progress percentage
+- `listResources()` — List available resources
+- `listPrompts()` — List available prompts
+
+---
+
 ## Why FastMCP4J?
 
 ### Less code
