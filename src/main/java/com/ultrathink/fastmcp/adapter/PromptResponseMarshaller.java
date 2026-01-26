@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * Converts method return values to MCP GetPromptResult.
- * Handles different return types: String, PromptMessage, List<PromptMessage>, and objects.
+ * Handles different return types: String, PromptMessage, List&lt;PromptMessage&gt;, and objects.
  * String → single user message with text content. Objects → JSON serialized in user message.
  */
 public class PromptResponseMarshaller {

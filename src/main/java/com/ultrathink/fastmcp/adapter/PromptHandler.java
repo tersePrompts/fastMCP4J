@@ -17,7 +17,7 @@ import java.util.function.BiFunction;
  * invocation, and response marshalling for prompt messages.
  *
  * Key behavior:
- * - Build a BiFunction<McpAsyncServerExchange, McpSchema.GetPromptRequest, Mono<McpSchema.GetPromptResult>>
+ * - Build a BiFunction&lt;McpAsyncServerExchange, McpSchema.GetPromptRequest, Mono&lt;McpSchema.GetPromptResult&gt;&gt;
  * - Bind method arguments via ArgumentBinder
  * - Invoke the method reflectively
  * - If the prompt is marked as async, unwrap the Mono/Flux and marshal results

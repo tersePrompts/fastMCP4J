@@ -17,7 +17,7 @@ import java.util.function.BiFunction;
  * invocation, and response marshalling for resource content.
  *
  * Key behavior:
- * - Build a BiFunction<McpAsyncServerExchange, McpSchema.ReadResourceRequest, Mono<McpSchema.ReadResourceResult>>
+ * - Build a BiFunction&lt;McpAsyncServerExchange, McpSchema.ReadResourceRequest, Mono&lt;McpSchema.ReadResourceResult&gt;&gt;
  * - Bind method arguments via ArgumentBinder
  * - Invoke the method reflectively
  * - If the resource is marked as async, unwrap the Mono/Flux and marshal results

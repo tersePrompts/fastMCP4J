@@ -23,7 +23,7 @@ import java.util.function.BiFunction;
  * invocation, and response marshalling.
  *
  * Key behavior:
- * - Build a BiFunction<McpAsyncServerExchange, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>>
+ * - Build a BiFunction&lt;McpAsyncServerExchange, McpSchema.CallToolRequest, Mono&lt;McpSchema.CallToolResult&gt;&gt;
  * - Bind method arguments via ArgumentBinder (with Context injection)
  * - Invoke method reflectively
  * - If tool is marked as async, unwrap Mono/Flux and marshal results
