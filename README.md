@@ -2,7 +2,7 @@
 
 # FastMCP4J
 
-### Java MCP Framework — Build MCP servers in 8 lines, no Spring
+### Java library for building MCP servers — annotation-driven, zero bloat
 
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
 [![Maven](https://img.shields.io/badge/Maven-3.8+-red.svg)](https://maven.apache.org/)
@@ -56,10 +56,10 @@ Connect Claude Desktop to `http://localhost:3000/mcp` — your tool appears inst
 
 **Connect & Use:**
 
-| Tool | How |
-|------|-----|
+| Tool | Command |
+|------|---------|
 | **Claude Desktop** | Add to `claude_desktop_config.json` (see below) |
-| **Claude Code** | Server running → tools appear automatically |
+| **Claude Code** | `Claude mcp add --transport http myserver http://localhost:3000/mcp` |
 
 **That's it. Your MCP server is running.**
 
