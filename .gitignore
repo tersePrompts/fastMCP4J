@@ -53,3 +53,6 @@ __pycache__/
 # Misc
 .mcp.json
 cp.txt
+
+# Claude IDE local settings
+.claude/settings.local.json
