@@ -1,0 +1,19 @@
+<!-- To use GitHub Packages, add this to your ~/.m2/settings.xml -->
+<settings>
+    <servers>
+        <server>
+            <id>github</id>
+            <username>YOUR_GITHUB_USERNAME</username>
+            <password>YOUR_GITHUB_TOKEN</password>
+        </server>
+    </servers>
+</settings>
+
+<!--
+Create a GitHub Personal Access Token at:
+https://github.com/settings/tokens
+
+Required scopes: read:packages
+
+Then set the password to: ghp_YOUR_TOKEN_HERE
+-->
