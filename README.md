@@ -21,37 +21,18 @@ Just annotate and run. See below →
 
 ### Add dependency
 
-> **Note:** GitHub Packages requires authentication. Add your GitHub credentials to `~/.m2/settings.xml` (see [.github/maven-settings.example.xml](.github/maven-settings.example.xml)).
-
 **Maven:**
 ```xml
-<repository>
-    <id>github</id>
-    <url>https://maven.pkg.github.com/av2019/fastMCP4J</url>
-</repository>
-
 <dependency>
     <groupId>com.ultrathink.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.2.0-beta</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
 **Gradle:**
 ```groovy
-repositories {
-    maven {
-        url = 'https://maven.pkg.github.com/av2019/fastMCP4J'
-        credentials {
-            username = System.getenv("GITHUB_USERNAME")
-            password = System.getenv("GITHUB_TOKEN")
-        }
-    }
-}
-
-dependencies {
-    implementation 'com.ultrathink.fastmcp:fastmcp-java:0.2.0-beta'
-}
+implementation 'com.ultrathink.fastmcp:fastmcp-java:0.2.0'
 ```
 
 ### Create your server
