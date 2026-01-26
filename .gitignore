@@ -56,3 +56,5 @@ cp.txt
 
 # Claude IDE local settings
 .claude/settings.local.json
+gpg-private-key*
+gpg-key-for-github.txt
