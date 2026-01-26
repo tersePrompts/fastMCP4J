@@ -107,7 +107,7 @@ public class MyServer {
 @McpFileRead   // AI reads your files
 @McpFileWrite  // AI writes files
 public class MyServer {
-    // All tools enabled, zero implementation
+    // All tools enabled, zero implementation needed
 }
 ```
 
