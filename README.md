@@ -135,12 +135,6 @@ FastMCP.server(MyServer.class)
     .run();
 ```
 
-### Claude Code
-
-```bash
-Claude mcp add --transport http myserver http://localhost:3000/mcp
-```
-
 ---
 
 ## Built-in Tools
@@ -174,6 +168,8 @@ Add ONE annotation, get complete functionality.
 ---
 
 ## Hooks — Run Code Before/After Tools
+
+Two hook types supported:
 
 **@McpPreHook** — Runs before any tool is called.
 
