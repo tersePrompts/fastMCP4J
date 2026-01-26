@@ -21,12 +21,18 @@ Just annotate and run. See below →
 
 ### One-liner install
 
+**Maven:**
 ```xml
 <dependency>
     <groupId>com.ultrathink.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
     <version>0.2.0-beta</version>
 </dependency>
+```
+
+**Gradle:**
+```groovy
+implementation 'com.ultrathink.fastmcp:fastmcp-java:0.2.0-beta'
 ```
 
 ### Run it (3 steps)
@@ -47,19 +53,12 @@ public class MyAssistant {
     }
 
     public static void main(String[] args) {
-        FastMCP.server(MyAssistant.class).streamable().port(3000).run();
+        FastMCP.server(MyAssistant.class)
+            .stdio()           // or .sse() or .streamable()
+            .run();
     }
 }
 ```
-
-Connect Claude Desktop to `http://localhost:3000/mcp` — your tool appears instantly.
-
-**Connect & Use:**
-
-| Tool | Command |
-|------|---------|
-| **Claude Desktop** | Add to `claude_desktop_config.json` (see below) |
-| **Claude Code** | `Claude mcp add --transport http myserver http://localhost:3000/mcp` |
 
 **That's it. Your MCP server is running.**
 
