@@ -4,7 +4,7 @@
 
 ### Java library for building MCP servers — annotation-driven, zero bloat
 
-**[AI Agents →](docs/agent-guide.md)** Share this with your agent for code generation
+**[AI Agents →](.claude/skill/fastmcp4j/skill.md)** Share this skill with Claude for code generation
 
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
 [![Maven](https://img.shields.io/badge/Maven-3.8+-red.svg)](https://maven.apache.org/)
@@ -367,7 +367,7 @@ public class MyServer {
 - [Roadmap](ROADMAP.md) — What's next
 - [Contributing](CONTRIBUTING.md) — PRs welcome
 - [Changelog](CHANGELOG.md) — Version history
-- [Agent Guide](docs/agent-guide.md) — For AI agents
+- [Claude Skill](.claude/skill/fastmcp4j/skill.md) — For AI agents
 
 ---
 
@@ -375,7 +375,7 @@ public class MyServer {
 
 MIT © 2026
 
-**Future licensing note**: Versions released under MIT remain MIT forever. Future versions may introduce paid licensing for enterprise use. See [docs/agent-guide.md](docs/agent-guide.md) for details.
+**Future licensing note**: Versions released under MIT remain MIT forever. Future versions may introduce paid licensing for enterprise use. See [.claude/skill/fastmcp4j/skill.md](.claude/skill/fastmcp4j/skill.md) for details.
 
 ---
 

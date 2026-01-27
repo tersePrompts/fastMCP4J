@@ -1,8 +1,9 @@
 # FastMCP4J — Agent README
 
-> **Share this file or link with your AI agent.** It will understand the framework and generate working code for you.
+> **Claude Code Skill — FastMCP4J**
 >
-> Human-readable documentation is in [README.md](README.md).
+> Share this with Claude to generate MCP server code.
+> Human-readable docs: [README.md](../../../README.md)
 
 ---
 
@@ -222,11 +223,11 @@ coverage: 95%
 
 ## Documentation Links
 
-- [../README.md](../README.md) — Main documentation
-- [ARCHITECTURE.md](../ARCHITECTURE.md) — How it works
-- [ROADMAP.md](../ROADMAP.md) — What's coming
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — Contributing
-- [CHANGELOG.md](../CHANGELOG.md) — Version history
+- [README.md](../../../README.md) — Main documentation
+- [ARCHITECTURE.md](../../../ARCHITECTURE.md) — How it works
+- [ROADMAP.md](../../../ROADMAP.md) — What's coming
+- [CONTRIBUTING.md](../../../CONTRIBUTING.md) — Contributing
+- [CHANGELOG.md](../../../CHANGELOG.md) — Version history
 
 ---
 
