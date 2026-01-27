@@ -85,6 +85,8 @@ public final class FastMCP {
 
     // Server
     private Server jetty;
+    private HttpServletSseServerTransportProvider sseProvider;
+    private HttpServletStreamableServerTransportProvider streamableProvider;
 
     // Custom stores
     private MemoryStore memoryStore;
@@ -320,7 +322,11 @@ public final class FastMCP {
             registerPrompts(builder, meta, instance);
             registerBuiltinTools(builder);
 
-            return (McpAsyncServer) ((Function<?, ?>) builder).apply(null);
+            McpAsyncServer server = (McpAsyncServer) builder.getClass().getMethod("build").invoke(builder);
+            // Start Jetty after session factory is set
+            if (sseProvider != null) startJetty(sseProvider);
+            else if (streamableProvider != null) startJetty(streamableProvider);
+            return server;
         } catch (Exception e) {
             throw new RuntimeException("Failed to build MCP server", e);
         }
@@ -347,9 +353,8 @@ public final class FastMCP {
                     builder.keepAliveInterval(keepAliveInterval);
                 }
 
-                HttpServletSseServerTransportProvider provider = builder.build();
-                startJetty(provider);
-                yield io.modelcontextprotocol.server.McpServer.async(provider);
+                sseProvider = builder.build();
+                yield io.modelcontextprotocol.server.McpServer.async(sseProvider);
             }
 
             case HTTP_STREAMABLE -> {
@@ -362,9 +367,8 @@ public final class FastMCP {
                     builder.keepAliveInterval(keepAliveInterval);
                 }
 
-                HttpServletStreamableServerTransportProvider provider = builder.build();
-                startJetty(provider);
-                yield io.modelcontextprotocol.server.McpServer.async(provider);
+                streamableProvider = builder.build();
+                yield io.modelcontextprotocol.server.McpServer.async(streamableProvider);
             }
         };
     }
@@ -396,11 +400,12 @@ public final class FastMCP {
         if (!caps.hasTools()) return;
 
         try {
-            var toolsMethod = builder.getClass().getMethod("tools", McpServerFeatures.AsyncToolSpecification.class);
+            var toolsMethod = builder.getClass().getMethod("tools", McpServerFeatures.AsyncToolSpecification[].class);
+            List<McpServerFeatures.AsyncToolSpecification> specs = new ArrayList<>();
             for (var tool : meta.getTools()) {
-                var spec = buildTool(tool, instance, hookManager);
-                toolsMethod.invoke(builder, spec);
+                specs.add(buildTool(tool, instance, hookManager));
             }
+            toolsMethod.invoke(builder, (Object) specs.toArray(McpServerFeatures.AsyncToolSpecification[]::new));
         } catch (Exception e) {
             throw new RuntimeException("Failed to register tools", e);
         }
@@ -412,11 +417,12 @@ public final class FastMCP {
         if (!caps.hasResources()) return;
 
         try {
-            var resourcesMethod = builder.getClass().getMethod("resources", McpServerFeatures.AsyncResourceSpecification.class);
+            var resourcesMethod = builder.getClass().getMethod("resources", List.class);
+            List<McpServerFeatures.AsyncResourceSpecification> specs = new ArrayList<>();
             for (var resource : meta.getResources()) {
-                var spec = buildResource(resource, instance);
-                resourcesMethod.invoke(builder, spec);
+                specs.add(buildResource(resource, instance));
             }
+            resourcesMethod.invoke(builder, specs);
         } catch (Exception e) {
             throw new RuntimeException("Failed to register resources", e);
         }
@@ -428,11 +434,12 @@ public final class FastMCP {
         if (!caps.hasPrompts()) return;
 
         try {
-            var promptsMethod = builder.getClass().getMethod("prompts", McpServerFeatures.AsyncPromptSpecification.class);
+            var promptsMethod = builder.getClass().getMethod("prompts", List.class);
+            List<McpServerFeatures.AsyncPromptSpecification> specs = new ArrayList<>();
             for (var prompt : meta.getPrompts()) {
-                var spec = buildPrompt(prompt, instance);
-                promptsMethod.invoke(builder, spec);
+                specs.add(buildPrompt(prompt, instance));
             }
+            promptsMethod.invoke(builder, specs);
         } catch (Exception e) {
             throw new RuntimeException("Failed to register prompts", e);
         }
@@ -440,57 +447,48 @@ public final class FastMCP {
 
     private void registerBuiltinTools(Object builder) {
         try {
-            var toolsMethod = builder.getClass().getMethod("tools", McpServerFeatures.AsyncToolSpecification.class);
+            List<McpServerFeatures.AsyncToolSpecification> specs = new ArrayList<>();
+            var toolsMethod = builder.getClass().getMethod("tools", McpServerFeatures.AsyncToolSpecification[].class);
 
-            // Memory tool
             if (serverClass.isAnnotationPresent(McpMemory.class)) {
                 MemoryStore store = memoryStore != null ? memoryStore : new InMemoryMemoryStore();
                 MemoryTool memoryTool = new MemoryTool(store);
-                var spec = buildBuiltinTool(memoryTool, "memory",
-                    "Memory tool for persistent storage and retrieval of information");
-                toolsMethod.invoke(builder, spec);
+                specs.add(buildBuiltinTool(memoryTool, "memory",
+                    "Memory tool for persistent storage and retrieval of information"));
             }
 
-            // Todo tools
             if (serverClass.isAnnotationPresent(McpTodo.class)) {
                 TodoStore store = todoStore != null ? todoStore : new InMemoryTodoStore();
                 TodoTool todoTool = new TodoTool(store);
-                List<ToolMeta> todoTools = scanner.scanToolsOnly(TodoTool.class);
-                for (var t : todoTools) {
-                    var spec = buildTool(t, todoTool, null);
-                    toolsMethod.invoke(builder, spec);
+                for (var t : scanner.scanToolsOnly(TodoTool.class)) {
+                    specs.add(buildTool(t, todoTool, null));
                 }
             }
 
-            // Planner tools
             if (serverClass.isAnnotationPresent(McpPlanner.class)) {
                 PlanStore store = planStore != null ? planStore : new InMemoryPlanStore();
                 PlannerTool plannerTool = new PlannerTool(store);
-                List<ToolMeta> plannerTools = scanner.scanToolsOnly(PlannerTool.class);
-                for (var t : plannerTools) {
-                    var spec = buildTool(t, plannerTool, null);
-                    toolsMethod.invoke(builder, spec);
+                for (var t : scanner.scanToolsOnly(PlannerTool.class)) {
+                    specs.add(buildTool(t, plannerTool, null));
                 }
             }
 
-            // File read tools
             if (serverClass.isAnnotationPresent(McpFileRead.class)) {
                 FileReadTool fileReadTool = new FileReadTool();
-                List<ToolMeta> fileReadTools = scanner.scanToolsOnly(FileReadTool.class);
-                for (var t : fileReadTools) {
-                    var spec = buildTool(t, fileReadTool, null);
-                    toolsMethod.invoke(builder, spec);
+                for (var t : scanner.scanToolsOnly(FileReadTool.class)) {
+                    specs.add(buildTool(t, fileReadTool, null));
                 }
             }
 
-            // File write tools
             if (serverClass.isAnnotationPresent(McpFileWrite.class)) {
                 FileWriteTool fileWriteTool = new FileWriteTool();
-                List<ToolMeta> fileWriteTools = scanner.scanToolsOnly(FileWriteTool.class);
-                for (var t : fileWriteTools) {
-                    var spec = buildTool(t, fileWriteTool, null);
-                    toolsMethod.invoke(builder, spec);
+                for (var t : scanner.scanToolsOnly(FileWriteTool.class)) {
+                    specs.add(buildTool(t, fileWriteTool, null));
                 }
+            }
+
+            if (!specs.isEmpty()) {
+                toolsMethod.invoke(builder, (Object) specs.toArray(McpServerFeatures.AsyncToolSpecification[]::new));
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to register builtin tools", e);
@@ -508,7 +506,15 @@ public final class FastMCP {
     }
 
     private void startJetty(HttpServletSseServerTransportProvider provider) throws Exception {
-        startJetty((HttpServlet) provider);
+        jetty = new Server(port);
+        ServletContextHandler ctx = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
+        ServletHolder holder = new ServletHolder(provider);
+        holder.setAsyncSupported(true);
+        // SSE requires two endpoints: /sse for GET (SSE connection) and /mcp for POST (messages)
+        ctx.addServlet(holder, "/sse/*");
+        ctx.addServlet(holder, mcpUri + "/*");
+        jetty.setHandler(ctx);
+        jetty.start();
     }
 
     private void startJetty(HttpServletStreamableServerTransportProvider provider) throws Exception {
