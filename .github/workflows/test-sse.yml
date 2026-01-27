@@ -2,9 +2,9 @@ name: MCP Integration Test - SSE
 
 on:
   pull_request:
-    branches: [main, feature/comprehensive-mcp-testing]
+    branches: [main]
   push:
-    branches: [main, feature/comprehensive-mcp-testing]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
