@@ -1,8 +1,9 @@
 # FastMCP4J — Agent README
 
-> **Share this file or link with your AI agent.** It will understand the framework and generate working code for you.
+> **Claude Code Skill — FastMCP4J**
 >
-> Human-readable documentation is in [README.md](README.md).
+> Share this with Claude to generate MCP server code.
+> Human-readable docs: [README.md](../../../README.md)
 
 ---
 
@@ -13,16 +14,16 @@ name: FastMCP4J
 type: MCP Server Framework
 language: Java 17+
 license: MIT (see Future Licensing below)
-status: Production Beta (v0.2.0-beta)
+status: Production (v0.2.0)
 mcp_spec: 0.17.2
 transports: [stdio, sse, http_streamable]
 builtin_tools: [memory, todo, planner, fileread, filewrite]
 annotations:
-  - "@McpServer"
-  - "@McpTool"
-  - "@McpResource"
-  - "@McpPrompt"
-  - "@McpParam"
+  - "@McpServer(name, version, icons)"
+  - "@McpTool(description, icons)"
+  - "@McpResource(uri)"
+  - "@McpPrompt(name)"
+  - "@McpParam(description, examples, constraints, defaultValue, required)"
   - "@McpAsync"
   - "@McpContext"
   - "@McpPreHook"
@@ -33,8 +34,8 @@ annotations:
   - "@McpFileRead"
   - "@McpFileWrite"
 dependency:
-  maven: "com.ultrathink.fastmcp:fastmcp-java:0.2.0-beta"
-  gradle: "implementation 'com.ultrathink.fastmcp:fastmcp-java:0.2.0-beta'"
+  maven: "io.github.terseprompts.fastmcp:fastmcp-java:0.2.0"
+  gradle: "implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.2.0'"
 main_class: "com.ultrathink.fastmcp.core.FastMCP"
 example: |
   @McpServer(name="X", version="1.0") class X {
@@ -58,8 +59,39 @@ public int add(int a, int b) { return a + b; }
 
 ```java
 @McpTool @McpAsync
-public Mono<String> process(String input) {
-    return Mono.fromCallable(() -> slowOperation(input));
+public Mono<String> process(@McpContext Context ctx, String input) {
+    return Mono.fromCallable(() -> {
+        ctx.reportProgress(50, "Processing...");
+        return slowOperation(input);
+    });
+}
+```
+
+### Add icons
+
+```java
+@McpServer(
+    name = "my-server",
+    icons = {
+        "data:image/svg+xml;base64,...:image/svg+xml:64x64:light",
+        "data:image/svg+xml;base64,...:image/svg+xml:64x64:dark"
+    }
+)
+@McpTool(description = "My tool", icons = {"https://example.com/icon.png"})
+public class MyServer { }
+```
+
+### Resources & Prompts
+
+```java
+@McpResource(uri = "config://settings")
+public String getSettings() {
+    return "{\"theme\": \"dark\"}";
+}
+
+@McpPrompt(name = "code-review")
+public String codeReviewPrompt(@McpParam(description = "Code") String code) {
+    return "Review: " + code;
 }
 ```
 
@@ -191,11 +223,11 @@ coverage: 95%
 
 ## Documentation Links
 
-- [README.md](README.md) — Main documentation
-- [ARCHITECTURE.md](ARCHITECTURE.md) — How it works
-- [ROADMAP.md](ROADMAP.md) — What's coming
-- [CONTRIBUTING.md](CONTRIBUTING.md) — Contributing
-- [CHANGELOG.md](CHANGELOG.md) — Version history
+- [README.md](../../../README.md) — Main documentation
+- [ARCHITECTURE.md](../../../ARCHITECTURE.md) — How it works
+- [ROADMAP.md](../../../ROADMAP.md) — What's coming
+- [CONTRIBUTING.md](../../../CONTRIBUTING.md) — Contributing
+- [CHANGELOG.md](../../../CHANGELOG.md) — Version history
 
 ---
 

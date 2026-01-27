@@ -4,6 +4,8 @@
 
 ### Java library for building MCP servers — annotation-driven, zero bloat
 
+**[AI Agents →](.claude/skill/fastmcp4j/skill.md)** Share this skill with Claude for code generation
+
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
 [![Maven](https://img.shields.io/badge/Maven-3.8+-red.svg)](https://maven.apache.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -21,36 +23,19 @@ Just annotate and run. See below →
 
 ### Add dependency
 
-> **Note:** GitHub Packages requires authentication. Add your GitHub credentials to `~/.m2/settings.xml` (see [.github/maven-settings.example.xml](.github/maven-settings.example.xml)).
-
 **Maven:**
 ```xml
-<repository>
-    <id>github</id>
-    <url>https://maven.pkg.github.com/av2019/fastMCP4J</url>
-</repository>
-
 <dependency>
-    <groupId>com.ultrathink.fastmcp</groupId>
+    <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.2.0-beta</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
 **Gradle:**
 ```groovy
-repositories {
-    maven {
-        url = 'https://maven.pkg.github.com/av2019/fastMCP4J'
-        credentials {
-            username = System.getenv("GITHUB_USERNAME")
-            password = System.getenv("GITHUB_TOKEN")
-        }
-    }
-}
-
 dependencies {
-    implementation 'com.ultrathink.fastmcp:fastmcp-java:0.2.0-beta'
+    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.2.0'
 }
 ```
 
@@ -73,7 +58,6 @@ public class MyAssistant {
 }
 ```
 
-> **No GitHub credentials?** Install locally: `mvn install:install-file -Dfile=fastmcp-java-0.2.0-beta.jar`
 
 ### Run it
 
@@ -365,7 +349,7 @@ public class MyServer {
 - [Roadmap](ROADMAP.md) — What's next
 - [Contributing](CONTRIBUTING.md) — PRs welcome
 - [Changelog](CHANGELOG.md) — Version history
-- [Agent README](agent-readme.md) — For AI agents
+- [Claude Skill](.claude/skill/fastmcp4j/skill.md) — For AI agents
 
 ---
 
@@ -373,7 +357,7 @@ public class MyServer {
 
 MIT © 2026
 
-**Future licensing note**: Versions released under MIT remain MIT forever. Future versions may introduce paid licensing for enterprise use. See [agent-readme.md](agent-readme.md) for details.
+**Future licensing note**: Versions released under MIT remain MIT forever. Future versions may introduce paid licensing for enterprise use. See [.claude/skill/fastmcp4j/skill.md](.claude/skill/fastmcp4j/skill.md) for details.
 
 ---
 

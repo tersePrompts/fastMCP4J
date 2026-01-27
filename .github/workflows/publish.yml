@@ -1,4 +1,4 @@
-name: Publish to GitHub Packages
+name: Publish to Maven Central
 
 on:
   release:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g. 0.2.0-beta)'
+        description: 'Version to publish (e.g. 0.2.0)'
         required: true
 
 jobs:
@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +40,13 @@ jobs:
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-maven-
 
-      - name: Publish to GitHub Packages
-        run: mvn --batch-mode deploy
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          gpg --list-secret-keys
+
+      - name: Publish to Maven Central
+        run: mvn --batch-mode clean deploy -DskipTests
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+          MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
