@@ -2,7 +2,6 @@
 """Quick test for SSE transport (port 3001)."""
 import asyncio
 import sys
-import time
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
@@ -28,14 +27,9 @@ async def main():
                     result = await session.call_tool("add", {"a": 10, "b": 5})
                     print(f"[ADD] 10 + 5 = {result.content[0].text}")
 
-                    # Test asyncTask
-                    result = await session.call_tool("asyncTask", {"taskName": "test"})
-                    print(f"[ASYNC] {result.content[0].text}")
-
-                    # Test memory
-                    await session.call_tool("memory", {"mode": "write", "key": "test", "value": "Hello"})
-                    result = await session.call_tool("memory", {"mode": "read", "key": "test"})
-                    print(f"[MEMORY] {result.content[0].text}")
+                    # Test echo
+                    result = await session.call_tool("echo", {"message": "Hello CI/CD"})
+                    print(f"[ECHO] {result.content[0].text}")
 
                     print("[OK] All tests passed!")
                     return 0

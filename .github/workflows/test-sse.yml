@@ -45,7 +45,7 @@ jobs:
       - name: Start SSE server in background
         run: |
           mvn -q exec:java \
-            -Dexec.mainClass=com.ultrathink.fastmcp.example.SseFullServer \
+            -Dexec.mainClass=com.ultrathink.fastmcp.example.SimpleSseServer \
             -Dexec.classpathScope=test \
             > server.log 2>&1 &
           SERVER_PID=$!

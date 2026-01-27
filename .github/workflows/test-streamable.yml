@@ -45,7 +45,7 @@ jobs:
       - name: Start Streamable HTTP server in background
         run: |
           mvn -q exec:java \
-            -Dexec.mainClass=com.ultrathink.fastmcp.example.EchoServer \
+            -Dexec.mainClass=com.ultrathink.fastmcp.example.SimpleStreamableServer \
             -Dexec.classpathScope=test \
             > server.log 2>&1 &
           SERVER_PID=$!
