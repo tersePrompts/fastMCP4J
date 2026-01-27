@@ -13,83 +13,65 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: ☕ Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Python
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Cache Maven packages
+      - name: 💾 Cache Maven packages
         uses: actions/cache@v4
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-maven-
 
-      - name: Install Python MCP SDK
+      - name: 📦 Install Python MCP SDK
         run: |
           pip install --upgrade pip
           pip install mcp
-          python -c "import mcp; print('MCP SDK installed successfully')"
+          python -c "import mcp; print('✓ MCP SDK installed')"
 
-      - name: Build project
+      - name: 🔨 Build project
         run: mvn -q clean package -DskipTests
 
-      - name: Start SSE server in background
+      - name: 🚀 Start SSE server
         run: |
-          echo "Starting server..."
           mvn -q exec:java \
             -Dexec.mainClass=com.ultrathink.fastmcp.example.SimpleSseServer \
             -Dexec.classpathScope=test \
             > server.log 2>&1 &
-          SERVER_PID=$!
-          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
-          echo "Server PID: $SERVER_PID"
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+          echo "✓ Server started (PID: $!)"
 
           # Wait for startup
           sleep 15
 
-          # Check if process is running
-          if ! kill -0 $SERVER_PID 2>/dev/null; then
-            echo "✗ Server process died!"
-            cat server.log
-            exit 1
-          fi
-          echo "✓ Process is running"
+          # Health checks
+          kill -0 $! 2>/dev/null || (echo "✗ Server died"; cat server.log; exit 1)
+          ss -ln | grep 3001 > /dev/null || (echo "✗ Port 3001 not listening"; cat server.log; exit 1)
+          echo "✓ Server is ready"
 
-          # Check port
-          if ss -ln | grep 3001 > /dev/null 2>&1; then
-            echo "✓ Port 3001 is listening"
-          else
-            echo "✗ Port 3001 NOT listening"
-            ss -ln || netstat -an
-            cat server.log
-            exit 1
-          fi
-
-      - name: Run SSE Python test
+      - name: 🧪 Run SSE MCP test
         run: |
-          echo "=== Running SSE MCP Test ==="
+          echo "::group::Test Execution"
           timeout 60 python python-tests/test_sse_quick.py || (cat server.log && exit 1)
+          echo "::endgroup::"
         env:
           PYTHONUNBUFFERED: 1
 
-      - name: Show server logs
+      - name: 📋 Server logs
         if: always()
-        run: |
-          echo "=== Server Logs ==="
-          tail -100 server.log || true
+        run: tail -50 server.log || true
 
-      - name: Stop server
+      - name: 🧹 Cleanup
         if: always()
-        run: |
-          if [ -n "$SERVER_PID" ]; then
-            kill $SERVER_PID 2>/dev/null || true
-          fi
+        run: kill ${{ env.SERVER_PID }} 2>/dev/null || true
