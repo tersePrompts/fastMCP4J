@@ -73,6 +73,8 @@ public class MyAssistant {
 }
 ```
 
+> **No GitHub credentials?** Install locally: `mvn install:install-file -Dfile=fastmcp-java-0.2.0-beta.jar`
+
 ### Run it
 
 ```bash
@@ -101,8 +103,11 @@ public int add(int a, int b) {
 ```java
 @McpTool(description = "Process data")
 @McpAsync  // ← just add this
-public Mono<String> process(String input) {
-    return Mono.fromCallable(() -> slowOperation(input));
+public Mono<String> process(@McpContext Context ctx, String input) {
+    return Mono.fromCallable(() -> {
+        ctx.reportProgress(50, "Processing...");
+        return slowOperation(input);
+    });
 }
 ```
 
@@ -156,6 +161,43 @@ FastMCP.server(MyServer.class)
 
 ---
 
+## Icons
+
+Add visual polish to your server, tools, resources, and prompts.
+
+```java
+@McpServer(
+    name = "my-server",
+    icons = {
+        "data:image/svg+xml;base64,...:image/svg+xml:64x64:light",
+        "data:image/svg+xml;base64,...:image/svg+xml:64x64:dark"
+    }
+)
+@McpTool(
+    description = "My tool",
+    icons = {"https://example.com/icon.png"}
+)
+public class MyServer { }
+```
+
+---
+
+## Resources & Prompts
+
+```java
+@McpResource(uri = "config://settings")
+public String getSettings() {
+    return "{\"theme\": \"dark\"}";
+}
+
+@McpPrompt(name = "code-review")
+public String codeReviewPrompt(@McpParam(description = "Code to review") String code) {
+    return "Review this code:\n" + code;
+}
+```
+
+---
+
 ## Built-in Tools
 
 Add ONE annotation, get complete functionality.
@@ -178,11 +220,25 @@ Add ONE annotation, get complete functionality.
 | `@McpTool` | METHOD | Expose as callable tool |
 | `@McpResource` | METHOD | Expose as resource |
 | `@McpPrompt` | METHOD | Expose as prompt template |
-| `@McpParam` | PARAMETER | Add description, examples, constraints |
+| `@McpParam` | PARAMETER | Add description, examples, constraints, defaults |
 | `@McpAsync` | METHOD | Make tool async (return `Mono<?>`) |
 | `@McpContext` | PARAMETER | Inject request context |
 | `@McpPreHook` | METHOD | Run before tool call |
 | `@McpPostHook` | METHOD | Run after tool call |
+
+**@McpParam advanced options:**
+```java
+@McpTool(description = "Create task")
+public String createTask(
+    @McpParam(
+        description = "Task name",
+        examples = {"backup", "sync"},
+        constraints = "Cannot be empty",
+        defaultValue = "default",
+        required = false
+    ) String taskName
+) { return "Created: " + taskName; }
+```
 
 ---
 
@@ -221,7 +277,7 @@ public class MyServer {
 }
 ```
 
-**Available in ToolContext:**
+**Context** (same type used by @McpContext, @McpPreHook, @McpPostHook):
 - `getToolName()` — Name of the tool being called
 - `getArguments()` — Arguments passed to the tool
 - `getStartTime()` — When the tool started
