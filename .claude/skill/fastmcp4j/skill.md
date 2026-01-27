@@ -13,8 +13,8 @@
 name: FastMCP4J
 type: MCP Server Framework
 language: Java 17+
-license: MIT (see Future Licensing below)
-status: Production (v0.2.0)
+license: MIT
+status: Alpha (v0.2.0) — Comprehensive tests, API may evolve
 mcp_spec: 0.17.2
 transports: [stdio, sse, http_streamable]
 builtin_tools: [memory, todo, planner, fileread, filewrite]
@@ -228,19 +228,6 @@ coverage: 95%
 - [ROADMAP.md](../../../ROADMAP.md) — What's coming
 - [CONTRIBUTING.md](../../../CONTRIBUTING.md) — Contributing
 - [CHANGELOG.md](../../../CHANGELOG.md) — Version history
-
----
-
-## Future Licensing
-
-**Current**: MIT (free for all uses)
-
-**Future**: May add paid licensing for enterprise use
-
-**Your rights**:
-- MIT versions remain MIT forever
-- Grandfather clause for existing users
-- See "Invoice Rights" in full documentation
 
 ---
 

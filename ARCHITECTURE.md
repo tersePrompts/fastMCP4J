@@ -6,7 +6,7 @@ FastMCP4J simplifies MCP server creation in Java from 30+ lines of verbose SDK c
 
 **Target Users**: Enterprise Java shops, microservice developers, backend engineers wrapping business logic as MCP tools.
 
-**Goal**: Production-ready MCP servers with zero configuration—just annotate, run, done.
+**Goal**: Simple MCP servers with minimal configuration—just annotate, run, done.
 
 ---
 
@@ -224,7 +224,7 @@ com.ultrathink.fastmcp/
 ## Dependencies
 
 ```
-io.modelcontextprotocol.sdk:mcp:0.16.0    # Official MCP SDK
+io.modelcontextprotocol.sdk:mcp:0.17.2    # Official MCP SDK
 com.fasterxml.jackson.core:jackson-databind   # JSON handling
 org.projectlombok:lombok                    # Code generation
 org.slf4j:slf4j-api + slf4j-simple          # Logging

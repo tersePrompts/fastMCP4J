@@ -86,7 +86,7 @@
         </dependency>
     </dependencies>
 
-    <url>https://github.com/av2019/fastMCP4J</url>
+    <url>https://github.com/tersePrompts/fastMCP4J</url>
 
     <licenses>
         <license>
@@ -96,9 +96,9 @@
     </licenses>
 
     <scm>
-        <connection>scm:git:git://github.com/av2019/fastMCP4J.git</connection>
-        <developerConnection>scm:git:ssh://github.com:av2019/fastMCP4J.git</developerConnection>
-        <url>https://github.com/av2019/fastMCP4J/tree/main</url>
+        <connection>scm:git:git://github.com/tersePrompts/fastMCP4J.git</connection>
+        <developerConnection>scm:git:ssh://github.com:tersePrompts/fastMCP4J.git</developerConnection>
+        <url>https://github.com/tersePrompts/fastMCP4J/tree/main</url>
     </scm>
 
 
