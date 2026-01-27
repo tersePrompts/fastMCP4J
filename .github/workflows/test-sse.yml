@@ -1,0 +1,72 @@
+name: MCP Integration Test - SSE
+
+on:
+  pull_request:
+    branches: [main, feature/comprehensive-mcp-testing]
+  push:
+    branches: [main, feature/comprehensive-mcp-testing]
+  workflow_dispatch:
+
+jobs:
+  test-sse:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+
+      - name: Install Python MCP SDK
+        run: pip install mcp
+
+      - name: Build project
+        run: mvn -q clean package -DskipTests
+
+      - name: Start SSE server
+        run: |
+          mvn -q exec:java \
+            -Dexec.mainClass=com.ultrathink.fastmcp.example.SseFullServer \
+            -Dexec.classpathScope=test \
+            > server.log 2>&1 &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+
+          # Wait for server to be ready
+          echo "Waiting for server to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:3001/sse > /dev/null 2>&1; then
+              echo "Server is ready!"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run SSE Python test
+        run: python python-tests/test_sse_quick.py
+
+      - name: Server logs on failure
+        if: failure()
+        run: cat server.log
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -n "$SERVER_PID" ]; then
+            kill $SERVER_PID 2>/dev/null || true
+          fi
