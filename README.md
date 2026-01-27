@@ -2,7 +2,7 @@
 
 # FastMCP4J
 
-### Java library for building MCP servers — annotation-driven, zero bloat
+### Java library for building MCP servers — annotation-driven, minimal dependencies
 
 **[AI Agents →](.claude/skill/fastmcp4j/skill.md)** Share this skill with Claude for code generation
 
@@ -11,11 +11,13 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-168%20Passing-brightgreen.svg)](src/test/java)
 
-**Zero bloat. 12 dependencies. No containers.**
+**Lightweight. 12 dependencies. No containers.**
 
 Just annotate and run. See below →
 
 </div>
+
+**Note**: Alpha release (v0.2.0) — comprehensive tests, API may evolve.
 
 ---
 
@@ -68,6 +70,18 @@ mvn exec:java -Dexec.mainClass="com.example.MyAssistant"
 **That's it. Your MCP server is running.**
 
 **Working example**: [EchoServer.java](https://github.com/tersePrompts/fastMCP4J/blob/main/src/test/java/com/ultrathink/fastmcp/example/EchoServer.java)
+
+---
+
+## Who This Is For
+
+| You want to... | FastMCP4J |
+|----------------|-----------|
+| Expose Java tools to AI agents | ✅ Perfect fit |
+| Build MCP servers quickly | ✅ Annotation-driven, minimal code |
+| Add MCP to existing Spring app | ✅ Drop-in, no framework lock-in |
+| Lightweight MCP-only solution | ✅ 12 dependencies, not 50+ |
+| Fast startup & low memory | ✅ <500ms cold start, ~64MB |
 
 ---
 
@@ -327,19 +341,21 @@ public class MyServer {
 **Raw MCP SDK**: 35+ lines per tool
 **FastMCP4J**: ~8 lines per tool
 
-### No bloat
+### Lightweight
 
-| Framework | Dependencies |
-|-----------|--------------|
-| Spring AI | 50+ jars |
-| LangChain4j | 30+ jars |
-| FastMCP4J | **12 jars** |
+| Framework | Dependencies | Best For |
+|-----------|--------------|----------|
+| Spring AI | 50+ jars | Full-stack AI apps |
+| LangChain4j | 30+ jars | Enterprise AI pipelines |
+| Quarkus AI | 40+ jars | Cloud-native microservices |
+| FastMCP4J | **12 jars** | **MCP servers only** |
 
-### Fast
+### Fast & focused
 
 - Cold start: <500ms
 - Tool invocation: <5ms
 - Memory: ~64MB
+- Purpose-built for MCP — not a general AI framework
 
 ---
 
@@ -356,8 +372,6 @@ public class MyServer {
 ## License
 
 MIT © 2026
-
-**Future licensing note**: Versions released under MIT remain MIT forever. Future versions may introduce paid licensing for enterprise use. See [.claude/skill/fastmcp4j/skill.md](.claude/skill/fastmcp4j/skill.md) for details.
 
 ---
 
