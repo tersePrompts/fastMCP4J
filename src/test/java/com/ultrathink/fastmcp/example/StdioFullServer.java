@@ -4,10 +4,9 @@ import com.ultrathink.fastmcp.annotations.*;
 import com.ultrathink.fastmcp.context.Context;
 import com.ultrathink.fastmcp.context.McpContext;
 import com.ultrathink.fastmcp.core.FastMCP;
-import reactor.core.publisher.Mono;
 
 /**
- * Full-featured STDIO test server with all annotations and async support.
+ * Full-featured STDIO test server with all annotations.
  */
 @McpServer(
     name = "stdio-full",
@@ -38,23 +37,16 @@ public class StdioFullServer {
         return a + b;
     }
 
-    // Async tool
-    @McpTool(description = "Async task with progress reporting")
+    @McpTool(description = "Simple async task")
     @McpAsync
-    public Mono<String> asyncTask(
+    public reactor.core.publisher.Mono<String> asyncTask(
         @McpParam(description = "Task name") String taskName,
-        @McpParam(description = "Duration in seconds", defaultValue = "2", required = false) int durationSeconds,
         @McpContext Context ctx
     ) {
-        return Mono.fromRunnable(() -> ctx.info("Starting async task: " + taskName))
-            .then(Mono.defer(() -> {
-                for (int i = 1; i <= durationSeconds; i++) {
-                    ctx.reportProgress(i, durationSeconds, "Step " + i);
-                    try { Thread.sleep(500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-                }
-                ctx.info("Completed async task: " + taskName);
-                return Mono.just("Task '" + taskName + "' completed");
-            }));
+        return reactor.core.publisher.Mono.fromSupplier(() -> {
+            ctx.info("Completed async task: " + taskName);
+            return "Task '" + taskName + "' completed";
+        });
     }
 
     public static void main(String[] args) {

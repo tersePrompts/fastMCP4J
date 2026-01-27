@@ -29,7 +29,7 @@ async def main():
                     print(f"[ADD] 10 + 5 = {result.content[0].text}")
 
                     # Test asyncTask
-                    result = await session.call_tool("asyncTask", {"taskName": "test", "durationSeconds": 1})
+                    result = await session.call_tool("asyncTask", {"taskName": "test"})
                     print(f"[ASYNC] {result.content[0].text}")
 
                     # Test memory
