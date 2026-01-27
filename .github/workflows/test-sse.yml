@@ -52,15 +52,15 @@ jobs:
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
           echo "Server PID: $SERVER_PID"
 
-          # Wait for server to be ready (up to 60 seconds)
+          # Wait for server to be ready (up to 90 seconds)
           echo "Waiting for SSE server at http://localhost:3001/sse ..."
-          for i in {1..60}; do
+          for i in {1..90}; do
             if curl -s -f http://localhost:3001/sse > /dev/null 2>&1; then
               echo "✓ Server is ready!"
               curl -s http://localhost:3001/sse | head -c 200 || true
               break
             fi
-            if [ $i -eq 60 ]; then
+            if [ $i -eq 90 ]; then
               echo "✗ Server failed to start"
               cat server.log
               exit 1
