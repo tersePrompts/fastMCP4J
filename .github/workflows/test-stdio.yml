@@ -10,6 +10,7 @@ on:
 jobs:
   test-stdio:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -33,10 +34,18 @@ jobs:
           restore-keys: ${{ runner.os }}-maven-
 
       - name: Install Python MCP SDK
-        run: pip install mcp
+        run: |
+          pip install --upgrade pip
+          pip install mcp
+          python -c "import mcp; print(f'MCP version: {mcp.__version__}')"
 
       - name: Build project
         run: mvn -q clean package -DskipTests
 
       - name: Run STDIO Python test (spawns server via mvn)
-        run: python python-tests/test_stdio_quick.py
+        run: |
+          echo "=== Running STDIO MCP Test ==="
+          python python-tests/test_stdio_quick.py
+        env:
+          PYTHONUNBUFFERED: 1
+          MAVEN_OPTS: -Xmx512m

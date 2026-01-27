@@ -10,6 +10,7 @@ on:
 jobs:
   test-streamable:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -33,12 +34,15 @@ jobs:
           restore-keys: ${{ runner.os }}-maven-
 
       - name: Install Python MCP SDK
-        run: pip install mcp
+        run: |
+          pip install --upgrade pip
+          pip install mcp
+          python -c "import mcp; print(f'MCP version: {mcp.__version__}')"
 
       - name: Build project
         run: mvn -q clean package -DskipTests
 
-      - name: Start Streamable HTTP server
+      - name: Start Streamable HTTP server in background
         run: |
           mvn -q exec:java \
             -Dexec.mainClass=com.ultrathink.fastmcp.example.EchoServer \
@@ -46,27 +50,40 @@ jobs:
             > server.log 2>&1 &
           SERVER_PID=$!
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          echo "Server PID: $SERVER_PID"
 
-          # Wait for server to be ready
-          echo "Waiting for server to start..."
-          for i in {1..30}; do
-            if curl -s http://localhost:3002/mcp > /dev/null 2>&1; then
-              echo "Server is ready!"
+          # Wait for server to be ready (up to 60 seconds)
+          echo "Waiting for Streamable HTTP server at http://localhost:3002/mcp ..."
+          for i in {1..60}; do
+            if curl -s -f http://localhost:3002/mcp > /dev/null 2>&1; then
+              echo "✓ Server is ready!"
               break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "✗ Server failed to start"
+              cat server.log
+              exit 1
             fi
             sleep 1
           done
 
       - name: Run Streamable HTTP Python test
-        run: python python-tests/test_streamable_quick.py
+        run: |
+          echo "=== Running Streamable HTTP MCP Test ==="
+          python python-tests/test_streamable_quick.py
+        env:
+          PYTHONUNBUFFERED: 1
 
-      - name: Server logs on failure
-        if: failure()
-        run: cat server.log
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Server Logs ==="
+          tail -100 server.log || true
 
       - name: Stop server
         if: always()
         run: |
           if [ -n "$SERVER_PID" ]; then
             kill $SERVER_PID 2>/dev/null || true
+            echo "Server stopped"
           fi
