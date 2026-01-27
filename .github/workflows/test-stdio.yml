@@ -1,0 +1,52 @@
+name: MCP Integration Test - STDIO
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-stdio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ☕ Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 💾 Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+
+      - name: 📦 Install Python MCP SDK
+        run: |
+          pip install --upgrade pip
+          pip install mcp
+          python -c "import mcp; print('✓ MCP SDK installed')"
+
+      - name: 🔨 Build project
+        run: mvn -q clean package -DskipTests
+
+      - name: 🧪 Run STDIO MCP test
+        run: |
+          echo "::group::Test Execution"
+          python python-tests/test_stdio_quick.py
+          echo "::endgroup::"
+        env:
+          PYTHONUNBUFFERED: 1

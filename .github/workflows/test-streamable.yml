@@ -1,0 +1,77 @@
+name: MCP Integration Test - Streamable HTTP
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-streamable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ☕ Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 💾 Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+
+      - name: 📦 Install Python MCP SDK
+        run: |
+          pip install --upgrade pip
+          pip install mcp
+          python -c "import mcp; print('✓ MCP SDK installed')"
+
+      - name: 🔨 Build project
+        run: mvn -q clean package -DskipTests
+
+      - name: 🚀 Start Streamable server
+        run: |
+          mvn -q exec:java \
+            -Dexec.mainClass=com.ultrathink.fastmcp.example.SimpleStreamableServer \
+            -Dexec.classpathScope=test \
+            > server.log 2>&1 &
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+          echo "✓ Server started (PID: $!)"
+
+          # Wait for startup
+          sleep 15
+
+          # Health checks
+          kill -0 $! 2>/dev/null || (echo "✗ Server died"; cat server.log; exit 1)
+          ss -ln | grep 3002 > /dev/null || (echo "✗ Port 3002 not listening"; cat server.log; exit 1)
+          echo "✓ Server is ready"
+
+      - name: 🧪 Run Streamable MCP test
+        run: |
+          echo "::group::Test Execution"
+          timeout 60 python python-tests/test_streamable_quick.py || (cat server.log && exit 1)
+          echo "::endgroup::"
+        env:
+          PYTHONUNBUFFERED: 1
+
+      - name: 📋 Server logs
+        if: always()
+        run: tail -50 server.log || true
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: kill ${{ env.SERVER_PID }} 2>/dev/null || true
