@@ -10,7 +10,7 @@ on:
 jobs:
   test-streamable:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -53,15 +53,16 @@ jobs:
           echo "Server PID: $SERVER_PID"
 
           # Wait for server to be ready (up to 90 seconds)
-          echo "Waiting for Streamable HTTP server at http://localhost:3002/mcp ..."
+          echo "Waiting for Streamable HTTP server at http://127.0.0.1:3002/mcp ..."
           for i in {1..90}; do
-            if curl -s -f http://localhost:3002/mcp > /dev/null 2>&1; then
+            if curl -s -f http://127.0.0.1:3002/mcp > /dev/null 2>&1; then
               echo "✓ Server is ready!"
               break
             fi
             if [ $i -eq 90 ]; then
               echo "✗ Server failed to start"
               cat server.log
+              netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null || netstat -an | grep 3002 || true
               exit 1
             fi
             sleep 1

@@ -6,7 +6,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 async def main():
-    url = "http://localhost:3002/mcp"
+    url = "http://127.0.0.1:3002/mcp"
     max_retries = 5
     retry_delay = 2
 

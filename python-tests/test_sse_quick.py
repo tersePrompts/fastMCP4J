@@ -7,7 +7,7 @@ from mcp import ClientSession
 from mcp.client.sse import sse_client
 
 async def main():
-    url = "http://localhost:3001/sse"
+    url = "http://127.0.0.1:3001/sse"
     max_retries = 5
     retry_delay = 2
 
