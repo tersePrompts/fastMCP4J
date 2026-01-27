@@ -71,7 +71,7 @@ jobs:
       - name: Run Streamable HTTP Python test
         run: |
           echo "=== Running Streamable HTTP MCP Test ==="
-          python python-tests/test_streamable_quick.py
+          timeout 120 python python-tests/test_streamable_quick.py || (cat server.log && exit 1)
         env:
           PYTHONUNBUFFERED: 1
 

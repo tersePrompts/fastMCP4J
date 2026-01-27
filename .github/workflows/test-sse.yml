@@ -72,7 +72,7 @@ jobs:
       - name: Run SSE Python test
         run: |
           echo "=== Running SSE MCP Test ==="
-          python python-tests/test_sse_quick.py
+          timeout 120 python python-tests/test_sse_quick.py || (cat server.log && exit 1)
         env:
           PYTHONUNBUFFERED: 1
 
