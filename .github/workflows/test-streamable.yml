@@ -10,7 +10,7 @@ on:
 jobs:
   test-streamable:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +44,7 @@ jobs:
 
       - name: Start Streamable HTTP server in background
         run: |
+          echo "Starting server..."
           mvn -q exec:java \
             -Dexec.mainClass=com.ultrathink.fastmcp.example.SimpleStreamableServer \
             -Dexec.classpathScope=test \
@@ -52,26 +53,31 @@ jobs:
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
           echo "Server PID: $SERVER_PID"
 
-          # Wait for server to be ready (up to 90 seconds)
-          echo "Waiting for Streamable HTTP server at http://127.0.0.1:3002/mcp ..."
-          for i in {1..90}; do
-            if curl -s -f http://127.0.0.1:3002/mcp > /dev/null 2>&1; then
-              echo "✓ Server is ready!"
-              break
-            fi
-            if [ $i -eq 90 ]; then
-              echo "✗ Server failed to start"
-              cat server.log
-              netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null || netstat -an | grep 3002 || true
-              exit 1
-            fi
-            sleep 1
-          done
+          # Wait for startup
+          sleep 15
+
+          # Check if process is running
+          if ! kill -0 $SERVER_PID 2>/dev/null; then
+            echo "✗ Server process died!"
+            cat server.log
+            exit 1
+          fi
+          echo "✓ Process is running"
+
+          # Check port
+          if ss -ln | grep 3002 > /dev/null 2>&1; then
+            echo "✓ Port 3002 is listening"
+          else
+            echo "✗ Port 3002 NOT listening"
+            ss -ln || netstat -an
+            cat server.log
+            exit 1
+          fi
 
       - name: Run Streamable HTTP Python test
         run: |
           echo "=== Running Streamable HTTP MCP Test ==="
-          timeout 120 python python-tests/test_streamable_quick.py || (cat server.log && exit 1)
+          timeout 60 python python-tests/test_streamable_quick.py || (cat server.log && exit 1)
         env:
           PYTHONUNBUFFERED: 1
 
@@ -86,5 +92,4 @@ jobs:
         run: |
           if [ -n "$SERVER_PID" ]; then
             kill $SERVER_PID 2>/dev/null || true
-            echo "Server stopped"
           fi

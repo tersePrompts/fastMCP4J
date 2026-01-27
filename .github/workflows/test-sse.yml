@@ -10,7 +10,7 @@ on:
 jobs:
   test-sse:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +44,7 @@ jobs:
 
       - name: Start SSE server in background
         run: |
+          echo "Starting server..."
           mvn -q exec:java \
             -Dexec.mainClass=com.ultrathink.fastmcp.example.SimpleSseServer \
             -Dexec.classpathScope=test \
@@ -52,27 +53,31 @@ jobs:
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
           echo "Server PID: $SERVER_PID"
 
-          # Wait for server to be ready (up to 90 seconds)
-          echo "Waiting for SSE server at http://localhost:3001/sse ..."
-          for i in {1..90}; do
-            if curl -s -f http://127.0.0.1:3001/sse > /dev/null 2>&1; then
-              echo "✓ Server is ready!"
-              curl -s http://127.0.0.1:3001/sse | head -c 200 || true
-              break
-            fi
-            if [ $i -eq 90 ]; then
-              echo "✗ Server failed to start"
-              cat server.log
-              netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null || netstat -an | grep 3001 || true
-              exit 1
-            fi
-            sleep 1
-          done
+          # Wait for startup
+          sleep 15
+
+          # Check if process is running
+          if ! kill -0 $SERVER_PID 2>/dev/null; then
+            echo "✗ Server process died!"
+            cat server.log
+            exit 1
+          fi
+          echo "✓ Process is running"
+
+          # Check port
+          if ss -ln | grep 3001 > /dev/null 2>&1; then
+            echo "✓ Port 3001 is listening"
+          else
+            echo "✗ Port 3001 NOT listening"
+            ss -ln || netstat -an
+            cat server.log
+            exit 1
+          fi
 
       - name: Run SSE Python test
         run: |
           echo "=== Running SSE MCP Test ==="
-          timeout 120 python python-tests/test_sse_quick.py || (cat server.log && exit 1)
+          timeout 60 python python-tests/test_sse_quick.py || (cat server.log && exit 1)
         env:
           PYTHONUNBUFFERED: 1
 
@@ -87,5 +92,4 @@ jobs:
         run: |
           if [ -n "$SERVER_PID" ]; then
             kill $SERVER_PID 2>/dev/null || true
-            echo "Server stopped"
           fi
