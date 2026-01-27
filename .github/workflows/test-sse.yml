@@ -37,7 +37,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install mcp
-          python -c "import mcp; print(f'MCP version: {mcp.__version__}')"
+          python -c "import mcp; print('MCP SDK installed successfully')"
 
       - name: Build project
         run: mvn -q clean package -DskipTests
