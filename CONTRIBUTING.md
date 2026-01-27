@@ -13,8 +13,8 @@ Thank you for your interest in contributing to FastMCP4J. This document provides
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/fastmcp4j.git
-   cd fastmcp4j
+   git clone https://github.com/tersePrompts/fastMCP4J.git
+   cd fastMCP4J
    ```
 
 2. Build the project:
@@ -129,4 +129,4 @@ We welcome contributions in these areas:
 
 ## License
 
-By contributing to FastMCP4J, you agree that your contributions will be licensed under the Apache License 2.0.
+By contributing to FastMCP4J, you agree that your contributions will be licensed under the MIT License.
