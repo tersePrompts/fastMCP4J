@@ -14,7 +14,7 @@ name: FastMCP4J
 type: MCP Server Framework
 language: Java 17+
 license: MIT (see Future Licensing below)
-status: Production Beta (v0.2.0-beta)
+status: Production (v0.2.0)
 mcp_spec: 0.17.2
 transports: [stdio, sse, http_streamable]
 builtin_tools: [memory, todo, planner, fileread, filewrite]
@@ -34,8 +34,8 @@ annotations:
   - "@McpFileRead"
   - "@McpFileWrite"
 dependency:
-  maven: "com.ultrathink.fastmcp:fastmcp-java:0.2.0-beta"
-  gradle: "implementation 'com.ultrathink.fastmcp:fastmcp-java:0.2.0-beta'"
+  maven: "io.github.terseprompts.fastmcp:fastmcp-java:0.2.0"
+  gradle: "implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.2.0'"
 main_class: "com.ultrathink.fastmcp.core.FastMCP"
 example: |
   @McpServer(name="X", version="1.0") class X {
