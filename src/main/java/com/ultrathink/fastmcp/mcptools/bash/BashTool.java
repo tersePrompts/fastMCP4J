@@ -334,9 +334,9 @@ public class BashTool {
             textOutput += "\nStderr:\n" + result.getStderr();
         }
 
-        return Mono.just(McpSchema.CallToolResult.of(
-            List.of(new McpSchema.TextContent(textOutput))
-        ));
+        return Mono.just(McpSchema.CallToolResult.builder()
+            .content(List.of(new McpSchema.TextContent(textOutput)))
+            .build());
     }
 
     /**

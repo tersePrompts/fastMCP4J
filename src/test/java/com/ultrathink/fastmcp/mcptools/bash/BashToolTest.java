@@ -149,7 +149,7 @@ class BashToolTest {
 
         // Create a long-running command
         String longCommand = OsDetector.isWindows()
-            ? "timeout 5"
+            ? "ping -n 6 127.0.0.1"  // Takes ~5 seconds on Windows
             : "sleep 5";
 
         BashResult result = bashTool.executeCommand(longCommand);
@@ -173,7 +173,8 @@ class BashToolTest {
 
     @Test
     void testExecuteCommandSchema() {
-        String executeSchema = BashTool.getExecuteCommandSchema();
+        BashTool bashTool = new BashTool();
+        String executeSchema = bashTool.getToolSchema();
         assertNotNull(executeSchema);
         assertTrue(executeSchema.contains("command"));
         assertTrue(executeSchema.contains("type"));

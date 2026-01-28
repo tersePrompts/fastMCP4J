@@ -5,8 +5,8 @@ package com.ultrathink.fastmcp.mcptools.bash;
  */
 public final class OsDetector {
 
-    private static final OsType CURRENT_OS = detectOs();
     private static final String OS_NAME = System.getProperty("os.name", "").toLowerCase();
+    private static final OsType CURRENT_OS = detectOs();
 
     private OsDetector() {
         // Utility class

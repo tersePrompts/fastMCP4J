@@ -29,8 +29,7 @@ import com.ultrathink.fastmcp.core.FastMCP;
  */
 @McpServer(
     name = "bash-demo-server",
-    version = "1.0.0",
-    description = "Demo server showcasing bash/shell command execution with OS detection"
+    version = "1.0.0"
 )
 @McpBash(timeout = 60)
 public class BashDemoServer {
