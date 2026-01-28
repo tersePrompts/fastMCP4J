@@ -155,9 +155,8 @@ public class SchemaGenerator {
             description.append(ann.description());
         }
 
-        // Examples
+        // Examples (included in description, not as separate field - not in JSON Schema 2020-12)
         if (ann.examples().length > 0) {
-            schema.put("examples", Arrays.asList(ann.examples()));
             description.append("\n\nExamples: ");
             description.append(String.join(", ", ann.examples()));
         }

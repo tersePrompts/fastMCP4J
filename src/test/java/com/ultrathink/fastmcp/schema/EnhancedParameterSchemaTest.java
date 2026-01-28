@@ -35,14 +35,10 @@ public class EnhancedParameterSchemaTest {
         String dirDesc = (String) directoryParam.get("description");
         assertTrue(dirDesc.contains("Directory path to search in"));
         assertTrue(dirDesc.contains("Examples:"));
+        assertTrue(dirDesc.contains("/home/user/documents"));
+        assertTrue(dirDesc.contains("./src/main/java"));
         assertTrue(dirDesc.contains("Constraints: Must be a valid directory path"));
         assertTrue(dirDesc.contains("Hints: Use '.' for current directory"));
-
-        @SuppressWarnings("unchecked")
-        java.util.List<String> examples = (java.util.List<String>) directoryParam.get("examples");
-        assertTrue(examples.contains("/home/user/documents"));
-        assertTrue(examples.contains("./src/main/java"));
-        assertTrue(examples.contains("C:\\Users\\User\\Projects"));
 
         // Test pattern parameter
         Map<String, Object> patternParam = (Map<String, Object>) properties.get("pattern");
@@ -107,7 +103,6 @@ public class EnhancedParameterSchemaTest {
         assertTrue(opDesc.contains("Arithmetic operation to perform"));
         assertTrue(opDesc.contains("Examples:"));
         assertTrue(opDesc.contains("Hints: Use 'add' for addition"));
-        assertTrue(operationParam.containsKey("examples"));
     }
 
     @Test
