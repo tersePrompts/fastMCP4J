@@ -8,11 +8,11 @@
     <!-- MUST match verified Central namespace -->
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.3.0-beta-SNAPSHOT</version>
+    <version>0.3.0-beta</version>
     <packaging>jar</packaging>
 
     <name>FastMCP Java</name>
-    <description>A batteries-included framework for building MCP servers in Java</description>
+    <description>Java framework for building Model Context Protocol (MCP) servers with annotations. A batteries-included framework for building MCP servers in Java</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -24,6 +24,9 @@
         <lombok.version>1.18.36</lombok.version>
         <slf4j.version>2.0.17</slf4j.version>
         <junit.version>5.11.4</junit.version>
+
+        <!-- GPG signing: skip by default, enable with -Prelease or -Dgpg.skip=false -->
+        <gpg.skip>true</gpg.skip>
     </properties>
 
     <dependencies>
@@ -158,11 +161,14 @@
                 </executions>
             </plugin>
 
-            <!-- REQUIRED for Maven Central -->
+            <!-- GPG signing: only enabled with -Dgpg.sign=true or release profile -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-gpg-plugin</artifactId>
                 <version>3.2.7</version>
+                <configuration>
+                    <skip>${gpg.skip}</skip>
+                </configuration>
                 <executions>
                     <execution>
                         <id>sign-artifacts</id>
@@ -185,6 +191,16 @@
 
         </plugins>
     </build>
+    <profiles>
+        <!-- Release profile: enables GPG signing -->
+        <profile>
+            <id>release</id>
+            <properties>
+                <gpg.sign>true</gpg.sign>
+                <gpg.skip>false</gpg.skip>
+            </properties>
+        </profile>
+    </profiles>
     <developers>
         <developer>
             <id>terseprompts</id>

@@ -12,6 +12,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Progress tracking for long-running operations
 - LLM sampling capability
 
+## [0.3.0-beta] - 2026-01-28
+
+### Added
+- **JSON Schema 2020-12 Compliance** - Full compliance with latest JSON Schema specification
+  - Added `$schema` declaration to all generated schemas
+  - Removed non-standard keywords (`examples`, `constraints`, `hints` as separate fields)
+  - All metadata now embedded in `description` field for LLM visibility
+
+### Fixed
+- **Security Vulnerabilities**
+  - Fixed GHSA-qh8g-58pp-2wxh - Jetty HTTP URI parsing vulnerability (upgraded to 11.0.26)
+  - Fixed CVE-2025-5115 - Jetty HTTP/2 "MadeYouReset" DoS vulnerability
+  - Upgraded SLF4J from 2.0.16 to 2.0.17
+
+### Changed
+- `required` attribute now only at schema root level (JSON Schema 2020-12 compliant)
+- Removed property-level `required` field which was non-standard
+- All parameter examples, constraints, and hints now in description text
+
+### Technical Details
+- Jackson 2.18.2 (no known CVEs)
+- Lombok 1.18.36 (no known CVEs)
+- JUnit 5.11.4 (no known CVEs)
+- MCP SDK 0.17.2
+- Jetty 11.0.26 (secure)
+
 ## [0.2.0] - 2026-01-26
 
 ### Added
