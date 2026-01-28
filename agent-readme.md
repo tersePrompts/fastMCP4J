@@ -13,10 +13,11 @@ name: FastMCP4J
 type: MCP Server Framework
 language: Java 17+
 license: MIT (see Future Licensing below)
-status: Production Beta (v0.2.0-beta)
+status: Production Beta (v0.3.0-beta)
 mcp_spec: 0.17.2
+json_schema: 2020-12
 transports: [stdio, sse, http_streamable]
-builtin_tools: [memory, todo, planner, fileread, filewrite]
+builtin_tools: [memory, todo, planner, fileread, filewrite, bash]
 annotations:
   - "@McpServer"
   - "@McpTool"
@@ -32,9 +33,10 @@ annotations:
   - "@McpPlanner"
   - "@McpFileRead"
   - "@McpFileWrite"
+  - "@McpBash"
 dependency:
-  maven: "com.ultrathink.fastmcp:fastmcp-java:0.2.0-beta"
-  gradle: "implementation 'com.ultrathink.fastmcp:fastmcp-java:0.2.0-beta'"
+  maven: "com.ultrathink.fastmcp:fastmcp-java:0.3.0-beta"
+  gradle: "implementation 'com.ultrathink.fastmcp:fastmcp-java:0.3.0-beta'"
 main_class: "com.ultrathink.fastmcp.core.FastMCP"
 example: |
   @McpServer(name="X", version="1.0") class X {
@@ -72,11 +74,22 @@ public Mono<String> process(String input) {
 @McpPlanner    // AI plans
 @McpFileRead   // AI reads files
 @McpFileWrite  // AI writes files
+@McpBash       // AI executes shell commands
 public class MyServer {
     public static void main(String[] args) {
         FastMCP.server(MyServer.class).stdio().run();
     }
 }
+```
+
+### Bash tool with restrictions
+
+```java
+@McpBash(
+    timeout = 60,
+    visibleAfterBasePath = "/home/user/projects/*",
+    notAllowedPaths = {"/etc", "/sys", "/proc"}
+)
 ```
 
 ### Choose transport
@@ -141,6 +154,7 @@ Claude mcp add --transport http myserver http://localhost:3000/mcp
 | `@McpPlanner` | TYPE | Enable planner tool |
 | `@McpFileRead` | TYPE | Enable file read |
 | `@McpFileWrite` | TYPE | Enable file write |
+| `@McpBash` | TYPE | Enable bash with path restrictions |
 
 ---
 
@@ -152,6 +166,7 @@ Claude mcp add --transport http myserver http://localhost:3000/mcp
 @McpPlanner    → createPlan|listPlans|getPlan|addTask|addSubtask
 @McpFileRead   → readLines|readFile|grep|getStats
 @McpFileWrite  → writeFile|appendFile|writeLines|deleteFile|createDirectory
+@McpBash       → bash (OS-aware: cmd.exe|zsh|bash)
 ```
 
 ---
@@ -185,7 +200,7 @@ coverage: 95%
 |--------|---------|-----------|
 | Lines per tool | 35+ | ~8 |
 | Dependencies | 1 | 12 |
-| Built-in tools | ❌ | ✅ 5 sets |
+| Built-in tools | ❌ | ✅ 6 sets |
 
 ---
 

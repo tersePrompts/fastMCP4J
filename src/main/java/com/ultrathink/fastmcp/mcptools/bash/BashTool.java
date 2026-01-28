@@ -6,6 +6,9 @@ import reactor.core.publisher.Mono;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +31,12 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  * <p>
  * Only use in trusted environments with proper sandboxing.
+ * <p>
+ * Path restrictions can be configured via constructor:
+ * <ul>
+ *   <li><code>visibleAfterBasePath</code> - only allow commands in this path pattern (e.g., "/home/user/projects/*")</li>
+ *   <li><code>notAllowedPaths</code> - blacklist of paths never allowed (e.g., {"/etc", "/sys", "/proc"})</li>
+ * </ul>
  */
 public class BashTool {
 
@@ -36,13 +45,21 @@ public class BashTool {
     private final ScheduledExecutorService timeoutExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<String, Process> runningProcesses = new ConcurrentHashMap<>();
     private final String osDescription;
+    private final String visibleAfterBasePath;
+    private final List<String> notAllowedPaths;
 
     public BashTool() {
-        this(DEFAULT_TIMEOUT_SECONDS);
+        this(DEFAULT_TIMEOUT_SECONDS, "", List.of());
     }
 
     public BashTool(int timeoutSeconds) {
+        this(timeoutSeconds, "", List.of());
+    }
+
+    public BashTool(int timeoutSeconds, String visibleAfterBasePath, List<String> notAllowedPaths) {
         this.timeoutSeconds = timeoutSeconds;
+        this.visibleAfterBasePath = visibleAfterBasePath;
+        this.notAllowedPaths = notAllowedPaths != null ? notAllowedPaths : List.of();
         this.osDescription = buildOsDescription();
     }
 
@@ -68,7 +85,8 @@ public class BashTool {
         String toolName = getToolName(osType);
         String cautionWarning = getCautionWarning(osType);
 
-        return String.format(
+        StringBuilder desc = new StringBuilder();
+        desc.append(String.format(
             "⚠️ %s\n\n" +
             "A MCP bash tool for %s.\n\n" +
             "Execute shell commands on the current system using the detected shell. " +
@@ -76,7 +94,16 @@ public class BashTool {
             "Platform: %s | Shell: %s | OS Type: %s",
             cautionWarning, toolName, System.getProperty("os.name"),
             OsDetector.getShellName(), osType.name()
-        );
+        ));
+
+        if (!visibleAfterBasePath.isEmpty()) {
+            desc.append("\n\n⚠️ Path Restriction: Commands only allowed in: ").append(visibleAfterBasePath);
+        }
+        if (!notAllowedPaths.isEmpty()) {
+            desc.append("\n\n⚠️ Blocked Paths: ").append(String.join(", ", notAllowedPaths));
+        }
+
+        return desc.toString();
     }
 
     private static String getToolName(OsType osType) {
@@ -123,6 +150,32 @@ public class BashTool {
     }
 
     /**
+     * Validate that the current working directory and command are allowed.
+     * @return Error message if validation fails, null if valid
+     */
+    private String validatePathRestrictions(String command) {
+        String cwd = System.getProperty("user.dir");
+
+        // Check notAllowedPaths blacklist
+        for (String blocked : notAllowedPaths) {
+            if (cwd.startsWith(blocked) || command.contains(blocked)) {
+                return String.format("Command blocked: path '%s' is not allowed", blocked);
+            }
+        }
+
+        // Check visibleAfterBasePath restriction
+        if (!visibleAfterBasePath.isEmpty()) {
+            String pattern = visibleAfterBasePath.replace("*", ".*");
+            if (!cwd.matches(pattern)) {
+                return String.format("Command blocked: current directory '%s' does not match allowed pattern '%s'",
+                    cwd, visibleAfterBasePath);
+            }
+        }
+
+        return null; // Valid
+    }
+
+    /**
      * Execute a shell command.
      * @param command The command to execute (e.g., "ls -la" or "dir")
      * @return BashResult with exit code, stdout, stderr
@@ -138,6 +191,12 @@ public class BashTool {
      * @return BashResult with exit code, stdout, stderr
      */
     public BashResult executeCommand(String command, int timeoutSec) {
+        // Check path restrictions
+        String pathError = validatePathRestrictions(command);
+        if (pathError != null) {
+            return new BashResult(-1, "", pathError, false, command);
+        }
+
         String[] shell = OsDetector.getDefaultShell();
         String fullCommand = shell.length > 1 ? shell[1] + " " + command : command;
 

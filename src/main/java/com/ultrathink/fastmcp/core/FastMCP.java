@@ -498,7 +498,11 @@ public final class FastMCP {
             // Bash tool
             if (serverClass.isAnnotationPresent(McpBash.class)) {
                 McpBash bashAnn = serverClass.getAnnotation(McpBash.class);
-                BashTool bashTool = new BashTool(bashAnn.timeout());
+                BashTool bashTool = new BashTool(
+                    bashAnn.timeout(),
+                    bashAnn.visibleAfterBasePath(),
+                    List.of(bashAnn.notAllowedPaths())
+                );
                 var spec = buildBuiltinTool(bashTool, "bash", bashTool.getToolDescription());
                 toolsMethod.invoke(builder, spec);
             }

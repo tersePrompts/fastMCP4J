@@ -33,7 +33,7 @@ Just annotate and run. See below →
 <dependency>
     <groupId>com.ultrathink.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.2.0-beta</version>
+    <version>0.3.0-beta</version>
 </dependency>
 ```
 
@@ -50,7 +50,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.ultrathink.fastmcp:fastmcp-java:0.2.0-beta'
+    implementation 'com.ultrathink.fastmcp:fastmcp-java:0.3.0-beta'
 }
 ```
 
@@ -125,6 +125,7 @@ public class MyServer {
 @McpPlanner    // AI breaks tasks into steps
 @McpFileRead   // AI reads your files
 @McpFileWrite  // AI writes files
+@McpBash       // AI executes shell commands
 public class MyServer {
     // All tools enabled, zero implementation needed
 }
@@ -167,6 +168,7 @@ Add ONE annotation, get complete functionality.
 | `@McpPlanner` | createPlan, listPlans, getPlan, addTask, addSubtask |
 | `@McpFileRead` | readLines, readFile, grep, getStats |
 | `@McpFileWrite` | writeFile, appendFile, writeLines, deleteFile, createDirectory |
+| `@McpBash` | bash — OS-aware shell command execution with timeout and path restrictions |
 
 ---
 
@@ -183,6 +185,12 @@ Add ONE annotation, get complete functionality.
 | `@McpContext` | PARAMETER | Inject request context |
 | `@McpPreHook` | METHOD | Run before tool call |
 | `@McpPostHook` | METHOD | Run after tool call |
+| `@McpMemory` | TYPE | Enable memory tools |
+| `@McpTodo` | TYPE | Enable todo tools |
+| `@McpPlanner` | TYPE | Enable planner tools |
+| `@McpFileRead` | TYPE | Enable file read tools |
+| `@McpFileWrite` | TYPE | Enable file write tools |
+| `@McpBash` | TYPE | Enable bash tool with OS-aware execution |
 
 ---
 
