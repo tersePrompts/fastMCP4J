@@ -1,0 +1,623 @@
+{
+  "title": "FastMCP4J - FastMCP 3.0 Feature Parity Plan",
+  "lastUpdated": "2026-01-27",
+  "description": "Plan to enable Python FastMCP 3.0 features in FastMCP4J",
+  "sourceUrl": "https://www.jlowin.dev/blog/fastmcp-3",
+  "existingFeatures": {
+    "description": "Features already implemented in FastMCP4J",
+    "features": [
+      {
+        "name": "Annotation-Based Framework",
+        "status": "COMPLETE",
+        "details": "@McpServer, @McpTool, @McpResource, @McpPrompt with full metadata support"
+      },
+      {
+        "name": "Callable Methods",
+        "status": "COMPLETE",
+        "details": "@McpTool methods remain regular Java methods - no proxy objects, fully testable"
+      },
+      {
+        "name": "Async Support",
+        "status": "COMPLETE",
+        "details": "@McpAsync with Project Reactor Mono<?> return types"
+      },
+      {
+        "name": "Session State",
+        "status": "COMPLETE",
+        "details": "Context.setState/getState/deleteState with ConcurrentHashMap storage"
+      },
+      {
+        "name": "Progress Reporting",
+        "status": "COMPLETE",
+        "details": "Context.reportProgress() for long-running operations"
+      },
+      {
+        "name": "Context API",
+        "status": "COMPLETE",
+        "details": "@McpContext injection with client info, headers, logging, resource/prompt listing"
+      },
+      {
+        "name": "Pre/Post Hooks",
+        "status": "COMPLETE",
+        "details": "@McpPreHook and @McpPostHook for execution interception"
+      },
+      {
+        "name": "Icons",
+        "status": "COMPLETE",
+        "details": "Icon support on servers, tools, resources, prompts with validation"
+      },
+      {
+        "name": "Built-in Tools",
+        "status": "COMPLETE",
+        "details": "@McpMemory, @McpTodo, @McpPlanner, @McpFileRead, @McpFileWrite"
+      },
+      {
+        "name": "Multiple Transports",
+        "status": "COMPLETE",
+        "details": "STDIO, HTTP SSE, HTTP Streamable (MCP 0.17.2)"
+      },
+      {
+        "name": "Parameter Metadata",
+        "status": "COMPLETE",
+        "details": "@McpParam with descriptions, examples, constraints, defaults"
+      }
+    ]
+  },
+  "prioritizedTasks": [
+    {
+      "id": "P1",
+      "title": "Add @McpVisible Annotation",
+      "category": "Progressive Disclosure",
+      "priority": "P1 - Quick Win",
+      "effort": "small",
+      "value": "Enable hiding tools/resources/prompts from discovery",
+      "dependencies": [],
+      "isCompleted": true,
+      "completedDate": "2026-01-27",
+      "branch": "feature/mcp-visible-annotation",
+      "tasks": [
+        {
+          "id": "PD-001",
+          "title": "Visibility Annotation",
+          "description": "Add @McpVisible annotation to control default visibility",
+          "effort": "small",
+          "isCompleted": true
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "title": "Component Versioning",
+      "category": "Versioning",
+      "priority": "P1 - High Value",
+      "effort": "medium",
+      "value": "Serve multiple tool versions side-by-side for API evolution",
+      "dependencies": [],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "VERSION-001",
+          "title": "Add Version Parameter to Annotations",
+          "description": "Add version attribute to @McpTool, @McpResource, @McpPrompt",
+          "effort": "small",
+          "isCompleted": false
+        },
+        {
+          "id": "VERSION-002",
+          "title": "Version Selection Logic",
+          "description": "Expose highest version by default, preserve older versions",
+          "effort": "medium",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P3",
+      "title": "Sync Tool Threadpool",
+      "category": "Developer Experience",
+      "priority": "P1 - Performance",
+      "effort": "medium",
+      "value": "Prevent sync tools from blocking the event loop",
+      "dependencies": [],
+      "isCompleted": true,
+      "completedDate": "2026-01-27",
+      "branch": "feature/sync-tool-threadpool",
+      "tasks": [
+        {
+          "id": "DX-002",
+          "title": "Sync Tool Threadpool",
+          "description": "Dispatch sync tools to threadpool to avoid blocking event loop",
+          "effort": "medium",
+          "isCompleted": true
+        }
+      ]
+    },
+    {
+      "id": "P4",
+      "title": "Transform Middleware Foundation",
+      "category": "Core Architecture",
+      "priority": "P1 - Foundation",
+      "effort": "large",
+      "value": "Enables renaming, namespacing, filtering, auth middleware",
+      "dependencies": [],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "ARCH-001",
+          "title": "Design Component Interface",
+          "description": "Define standardized Component interface",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "ARCH-003",
+          "title": "Design Transform Interface",
+          "description": "Create Transform interface for modifying components",
+          "effort": "small",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P5",
+      "title": "Basic Transforms",
+      "category": "Transforms",
+      "priority": "P1 - High Utility",
+      "effort": "medium",
+      "value": "Rename, namespace, and filter components",
+      "dependencies": ["P4"],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "TRANS-001",
+          "title": "RenameTransform",
+          "description": "Rename component names and descriptions",
+          "effort": "small",
+          "isCompleted": false
+        },
+        {
+          "id": "TRANS-002",
+          "title": "NamespaceTransform",
+          "description": "Add namespace prefixes to prevent collisions",
+          "effort": "small",
+          "isCompleted": false
+        },
+        {
+          "id": "TRANS-003",
+          "title": "FilterTransform",
+          "description": "Filter components by tags or criteria",
+          "effort": "medium",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P6",
+      "title": "Authorization SPI",
+      "category": "Authorization",
+      "priority": "P2 - Security",
+      "effort": "medium",
+      "value": "Foundation for all auth features",
+      "dependencies": [],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "AUTH-001",
+          "title": "Auth SPI Design",
+          "description": "Define authorization interface (AuthStrategy, Authorizer)",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "AUTH-002",
+          "title": "Add Auth Parameter to Annotations",
+          "description": "Add auth attribute to @McpTool, @McpResource, @McpPrompt",
+          "effort": "small",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P7",
+      "title": "Dynamic Component Visibility",
+      "category": "Progressive Disclosure",
+      "priority": "P2 - High Value",
+      "effort": "medium",
+      "value": "Enable/disable components during session",
+      "dependencies": ["P1"],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "PD-002",
+          "title": "Context.enableComponents()",
+          "description": "Add API to dynamically enable components",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "PD-003",
+          "title": "Context.disableComponents()",
+          "description": "Add API to dynamically disable components",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "PD-004",
+          "title": "Tag-based Visibility",
+          "description": "Enable/disable components by tag groups",
+          "effort": "medium",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P8",
+      "title": "OpenTelemetry Integration",
+      "category": "Observability",
+      "priority": "P2 - Production Readiness",
+      "effort": "medium",
+      "value": "Distributed tracing for all MCP operations",
+      "dependencies": [],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "OBS-001",
+          "title": "Add OpenTelemetry Dependency",
+          "description": "Add io.opentelemetry dependencies to pom.xml",
+          "effort": "small",
+          "isCompleted": false
+        },
+        {
+          "id": "OBS-002",
+          "title": "Tool Call Tracing",
+          "description": "Instrument all tool calls with OTEL spans",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "OBS-005",
+          "title": "Standardized Attributes",
+          "description": "Add standard OTEL attributes",
+          "effort": "small",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P9",
+      "title": "Provider SPI",
+      "category": "Core Architecture",
+      "priority": "P2 - Foundation",
+      "effort": "large",
+      "value": "Enable FileSystemProvider, OpenAPIProvider, etc.",
+      "dependencies": ["P4"],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "ARCH-002",
+          "title": "Design Provider SPI",
+          "description": "Create Service Provider Interface for component sources",
+          "effort": "large",
+          "isCompleted": false
+        },
+        {
+          "id": "PROV-001",
+          "title": "LocalProvider Enhancement",
+          "description": "Wrap existing AnnotationScanner as LocalProvider",
+          "effort": "small",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P10",
+      "title": "Built-in Auth Providers",
+      "category": "Authorization",
+      "priority": "P2 - Security",
+      "effort": "large",
+      "value": "OAuth2, JWT, API Key, Basic auth strategies",
+      "dependencies": ["P6"],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "AUTH-003",
+          "title": "Built-in Auth Providers",
+          "description": "Implement OAuth2, JWT, API Key, Basic auth",
+          "effort": "large",
+          "isCompleted": false
+        },
+        {
+          "id": "AUTH-004",
+          "title": "Scope-based Authorization",
+          "description": "Implement require_scopes style authorization",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "TRANS-005",
+          "title": "AuthMiddleware",
+          "description": "Apply authorization rules to component groups",
+          "effort": "large",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P11",
+      "title": "FileSystemProvider",
+      "category": "Providers",
+      "priority": "P3 - Nice to Have",
+      "effort": "large",
+      "value": "Scan directory for MCP components with hot reload",
+      "dependencies": ["P9"],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "PROV-002",
+          "title": "FileSystemProvider",
+          "description": "Scan directory for MCP components with file watching",
+          "effort": "large",
+          "isCompleted": false
+        },
+        {
+          "id": "DX-001",
+          "title": "Hot Reload with File Watching",
+          "description": "Watch source files and reload server on changes",
+          "effort": "large",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P12",
+      "title": "Session State SPI",
+      "category": "Session State",
+      "priority": "P3 - Scalability",
+      "effort": "medium",
+      "value": "Pluggable session storage (in-memory, Redis)",
+      "dependencies": [],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "STATE-001",
+          "title": "Session State Store SPI",
+          "description": "Extract existing session state to pluggable SPI",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "STATE-002",
+          "title": "RedisSessionStore",
+          "description": "Implement Redis-backed session state",
+          "effort": "medium",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P13",
+      "title": "Background Tasks (SEP-1686)",
+      "category": "Background Tasks",
+      "priority": "P3 - Advanced",
+      "effort": "large",
+      "value": "Long-running operations without blocking",
+      "dependencies": [],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "BG-001",
+          "title": "Background Task SPI",
+          "description": "Define interface for SEP-1686 compatible tasks",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "BG-002",
+          "title": "Docket Integration",
+          "description": "Integrate with Docket for SEP-1686 protocol",
+          "effort": "large",
+          "isCompleted": false
+        },
+        {
+          "id": "BG-003",
+          "title": "Task Status Query",
+          "description": "Allow clients to query task status and results",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "BG-004",
+          "title": "@McpBackground Annotation",
+          "description": "Add annotation for background execution",
+          "effort": "small",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P14",
+      "title": "Additional Providers",
+      "category": "Providers",
+      "priority": "P3 - Nice to Have",
+      "effort": "large",
+      "value": "OpenAPI, Skills, Remote Server providers",
+      "dependencies": ["P9"],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "PROV-003",
+          "title": "SkillsProvider",
+          "description": "Expose Claude/Cursor skills as MCP resources",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "PROV-004",
+          "title": "OpenAPIProvider",
+          "description": "Convert OpenAPI specs to MCP tools",
+          "effort": "large",
+          "isCompleted": false
+        },
+        {
+          "id": "PROV-005",
+          "title": "RemoteServerProvider",
+          "description": "Proxy remote MCP servers",
+          "effort": "medium",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P15",
+      "title": "Playbooks",
+      "category": "Playbooks",
+      "priority": "P3 - Advanced",
+      "effort": "large",
+      "value": "Dynamic workflows via stateful unlocks",
+      "dependencies": ["P7", "P12"],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "PLAY-001",
+          "title": "Playbook Definition API",
+          "description": "Define Playbook interface for workflows",
+          "effort": "large",
+          "isCompleted": false
+        },
+        {
+          "id": "PLAY-002",
+          "title": "Playbook Execution Engine",
+          "description": "Execute playbooks with state tracking",
+          "effort": "large",
+          "isCompleted": false
+        },
+        {
+          "id": "PLAY-003",
+          "title": "@McpPlaybook Annotation",
+          "description": "Annotation-based playbook definition",
+          "effort": "medium",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P16",
+      "title": "Additional Observability",
+      "category": "Observability",
+      "priority": "P3 - Enhancement",
+      "effort": "medium",
+      "value": "Extended tracing and metrics",
+      "dependencies": ["P8"],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "OBS-003",
+          "title": "Resource Read Tracing",
+          "description": "Instrument resource reads with OTEL spans",
+          "effort": "small",
+          "isCompleted": false
+        },
+        {
+          "id": "OBS-004",
+          "title": "Prompt Render Tracing",
+          "description": "Instrument prompt rendering with OTEL spans",
+          "effort": "small",
+          "isCompleted": false
+        },
+        {
+          "id": "OBS-006",
+          "title": "Metrics Export",
+          "description": "Export metrics for invocations, latencies, errors",
+          "effort": "medium",
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "id": "P17",
+      "title": "Testing & Documentation",
+      "category": "Testing & Documentation",
+      "priority": "P1 - Required",
+      "effort": "large",
+      "value": "Tests and docs for all new features",
+      "dependencies": [],
+      "isCompleted": false,
+      "tasks": [
+        {
+          "id": "TEST-001",
+          "title": "Provider Tests",
+          "description": "Tests for all Provider implementations",
+          "effort": "large",
+          "isCompleted": false
+        },
+        {
+          "id": "TEST-002",
+          "title": "Transform Tests",
+          "description": "Tests for all Transform implementations",
+          "effort": "large",
+          "isCompleted": false
+        },
+        {
+          "id": "TEST-003",
+          "title": "Auth Integration Tests",
+          "description": "End-to-end tests for authorization",
+          "effort": "large",
+          "isCompleted": false
+        },
+        {
+          "id": "TEST-004",
+          "title": "Versioning Tests",
+          "description": "Tests for multi-version support",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "TEST-005",
+          "title": "Progressive Disclosure Tests",
+          "description": "Tests for dynamic visibility",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "DOC-001",
+          "title": "Provider Guide",
+          "description": "Documentation for Providers",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "DOC-002",
+          "title": "Transform Guide",
+          "description": "Documentation for Transforms",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "DOC-003",
+          "title": "Authorization Guide",
+          "description": "Documentation for auth",
+          "effort": "medium",
+          "isCompleted": false
+        },
+        {
+          "id": "DOC-004",
+          "title": "Progressive Disclosure Examples",
+          "description": "Examples for dynamic visibility",
+          "effort": "medium",
+          "isCompleted": false
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "totalTasks": 56,
+    "completedTasks": 2,
+    "completedPriorities": 2,
+    "existingFeatures": 11,
+    "priorities": 17,
+    "quickWins": ["P1", "P2", "P3"],
+    "foundation": ["P4", "P6", "P9"],
+    "estimatedCompletion": "TBD based on team capacity",
+    "nextUp": ["P2", "P4"]
+  }
+}

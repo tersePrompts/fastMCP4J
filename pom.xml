@@ -7,7 +7,7 @@
 
     <groupId>com.ultrathink.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.2.0-beta</version>
+    <version>0.3.0-beta</version>
     <packaging>jar</packaging>
 
     <name>FastMCP Java</name>

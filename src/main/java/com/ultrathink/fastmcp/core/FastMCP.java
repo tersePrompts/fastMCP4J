@@ -5,9 +5,11 @@ import com.ultrathink.fastmcp.adapter.*;
 import com.ultrathink.fastmcp.annotations.McpMemory;
 import com.ultrathink.fastmcp.annotations.McpTodo;
 import com.ultrathink.fastmcp.annotations.McpPlanner;
+import com.ultrathink.fastmcp.annotations.McpBash;
 import com.ultrathink.fastmcp.annotations.McpFileRead;
 import com.ultrathink.fastmcp.annotations.McpFileWrite;
 import com.ultrathink.fastmcp.hook.HookManager;
+import com.ultrathink.fastmcp.mcptools.bash.BashTool;
 import com.ultrathink.fastmcp.mcptools.fileread.FileReadTool;
 import com.ultrathink.fastmcp.mcptools.filewrite.FileWriteTool;
 import com.ultrathink.fastmcp.mcptools.memory.InMemoryMemoryStore;
@@ -491,6 +493,14 @@ public final class FastMCP {
                     var spec = buildTool(t, fileWriteTool, null);
                     toolsMethod.invoke(builder, spec);
                 }
+            }
+
+            // Bash tool
+            if (serverClass.isAnnotationPresent(McpBash.class)) {
+                McpBash bashAnn = serverClass.getAnnotation(McpBash.class);
+                BashTool bashTool = new BashTool(bashAnn.timeout());
+                var spec = buildBuiltinTool(bashTool, "bash", bashTool.getToolDescription());
+                toolsMethod.invoke(builder, spec);
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to register builtin tools", e);

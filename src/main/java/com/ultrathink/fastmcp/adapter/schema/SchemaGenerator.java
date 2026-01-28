@@ -15,6 +15,7 @@ public class SchemaGenerator {
 
     public Map<String, Object> generate(Method method) {
         Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("$schema", "https://json-schema.org/draft/2020-12/schema");
         schema.put("type", "object");
 
         Map<String, Object> props = new LinkedHashMap<>();
@@ -79,6 +80,7 @@ public class SchemaGenerator {
 
     private Map<String, Object> pojoSchema(Class<?> clazz) {
         Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("$schema", "https://json-schema.org/draft/2020-12/schema");
         schema.put("type", "object");
 
         Map<String, Object> properties = new LinkedHashMap<>();
@@ -154,22 +156,20 @@ public class SchemaGenerator {
             description.append(ann.description());
         }
 
-        // Examples
+        // Examples - valid JSON Schema 2020-12 keyword
         if (ann.examples().length > 0) {
             schema.put("examples", Arrays.asList(ann.examples()));
             description.append("\n\nExamples: ");
             description.append(String.join(", ", ann.examples()));
         }
 
-        // Constraints
+        // Constraints - embed in description (not a valid JSON Schema keyword)
         if (!ann.constraints().isEmpty()) {
-            schema.put("constraints", ann.constraints());
             description.append("\n\nConstraints: ").append(ann.constraints());
         }
 
-        // Hints for LLM
+        // Hints - embed in description (not a valid JSON Schema keyword)
         if (!ann.hints().isEmpty()) {
-            schema.put("hints", ann.hints());
             description.append("\n\nHints: ").append(ann.hints());
         }
 
@@ -181,11 +181,6 @@ public class SchemaGenerator {
         // Add default value if provided
         if (!ann.defaultValue().isEmpty()) {
             schema.put("default", ann.defaultValue());
-        }
-
-        // Override required status based on annotation
-        if (!ann.required()) {
-            schema.put("required", false);
         }
     }
 }
