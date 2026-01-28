@@ -51,5 +51,5 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Verify build (skip GPG signing in CI)
-        run: mvn clean verify -DskipTests=false -Dgpg.skip=true
+      - name: Verify build
+        run: mvn clean verify -DskipTests=false
