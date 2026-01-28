@@ -8,11 +8,11 @@
     <!-- MUST match verified Central namespace -->
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.3.0-beta-SNAPSHOT</version>
+    <version>0.3.0-beta</version>
     <packaging>jar</packaging>
 
     <name>FastMCP Java</name>
-    <description>A batteries-included framework for building MCP servers in Java</description>
+    <description>Java framework for building Model Context Protocol (MCP) servers with annotations. JSON Schema 2020-12 compliant, lightweight, secure.</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

@@ -17,7 +17,7 @@ Just annotate and run. See below →
 
 </div>
 
-**Note**: Alpha release (v0.2.0) — comprehensive tests, API may evolve.
+**Note**: Beta release (v0.3.0-beta) — JSON Schema 2020-12 compliant, security fixes. API stable.
 
 ---
 
@@ -30,14 +30,14 @@ Just annotate and run. See below →
 <dependency>
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.0-beta</version>
 </dependency>
 ```
 
 **Gradle:**
 ```groovy
 dependencies {
-    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.2.0'
+    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.3.0-beta'
 }
 ```
 
