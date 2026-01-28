@@ -184,5 +184,4 @@ public class SchemaGenerator {
 
         // Note: required status is handled at root schema level, not property level (JSON Schema 2020-12)
     }
-    }
 }
