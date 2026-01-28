@@ -32,6 +32,7 @@ class SchemaGeneratorTest {
         Method m = PrimitivesServer.class.getMethod("add", int.class, int.class);
         Map<String, Object> schema = generator.generate(m);
         Map<String, Object> expected = Map.of(
+            "$schema", "https://json-schema.org/draft/2020-12/schema",
             "type", "object",
             "properties", Map.of(
                 "a", Map.of("type", "integer"),
