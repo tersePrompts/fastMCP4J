@@ -8,7 +8,7 @@
     <!-- MUST match verified Central namespace -->
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.0-beta-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>FastMCP Java</name>
