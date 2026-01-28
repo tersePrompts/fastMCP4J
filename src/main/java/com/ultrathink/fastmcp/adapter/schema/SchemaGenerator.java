@@ -15,6 +15,7 @@ public class SchemaGenerator {
 
     public Map<String, Object> generate(Method method) {
         Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("$schema", "https://json-schema.org/draft/2020-12/schema");
         schema.put("type", "object");
 
         Map<String, Object> props = new LinkedHashMap<>();
