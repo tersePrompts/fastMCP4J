@@ -38,9 +38,6 @@ public class EnhancedParameterSchemaTest {
         assertTrue(dirDesc.contains("Constraints: Must be a valid directory path"));
         assertTrue(dirDesc.contains("Hints: Use '.' for current directory"));
 
-        assertEquals("Must be a valid directory path", directoryParam.get("constraints"));
-        assertEquals("Use '.' for current directory, '..' for parent directory", directoryParam.get("hints"));
-
         @SuppressWarnings("unchecked")
         java.util.List<String> examples = (java.util.List<String>) directoryParam.get("examples");
         assertTrue(examples.contains("/home/user/documents"));
@@ -54,19 +51,13 @@ public class EnhancedParameterSchemaTest {
         assertTrue(patternDesc.contains("Constraints: Must be a valid file pattern"));
         assertTrue(patternDesc.contains("Hints: Use ** for recursive search"));
 
-        assertEquals("Must be a valid file pattern", patternParam.get("constraints"));
-        assertEquals("Use ** for recursive search, * for single-level match", patternParam.get("hints"));
-        
         // Test optional recursive parameter
         Map<String, Object> recursiveParam = (Map<String, Object>) properties.get("recursive");
         assertEquals("true", recursiveParam.get("default"));
-        assertEquals(false, recursiveParam.get("required"));
-        
+
         // Test optional limit parameter
         Map<String, Object> limitParam = (Map<String, Object>) properties.get("limit");
         assertEquals("50", limitParam.get("default"));
-        assertEquals(false, limitParam.get("required"));
-        assertEquals("Must be positive integer between 1 and 1000", limitParam.get("constraints"));
     }
 
     @Test
@@ -90,12 +81,9 @@ public class EnhancedParameterSchemaTest {
         assertTrue(emailDesc.contains("User's email address"));
         assertTrue(emailDesc.contains("Constraints: Must be valid email format"));
         assertTrue(emailDesc.contains("Hints: This will be username for login."));
-        assertEquals("Must be valid email format", emailParam.get("constraints"));
-        assertEquals("This will be username for login.", emailParam.get("hints"));
-        
+
         Map<String, Object> roleParam = (Map<String, Object>) properties.get("role");
         assertEquals("user", roleParam.get("default"));
-        assertEquals(false, roleParam.get("required"));
     }
 
     @Test
@@ -119,7 +107,6 @@ public class EnhancedParameterSchemaTest {
         assertTrue(opDesc.contains("Arithmetic operation to perform"));
         assertTrue(opDesc.contains("Examples:"));
         assertTrue(opDesc.contains("Hints: Use 'add' for addition"));
-        assertEquals("Use 'add' for addition, 'subtract' for subtraction, etc.", operationParam.get("hints"));
         assertTrue(operationParam.containsKey("examples"));
     }
 

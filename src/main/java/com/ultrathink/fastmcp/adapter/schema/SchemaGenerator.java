@@ -162,15 +162,13 @@ public class SchemaGenerator {
             description.append(String.join(", ", ann.examples()));
         }
 
-        // Constraints
+        // Constraints (included in description, not as separate field for JSON Schema compliance)
         if (!ann.constraints().isEmpty()) {
-            schema.put("constraints", ann.constraints());
             description.append("\n\nConstraints: ").append(ann.constraints());
         }
 
-        // Hints for LLM
+        // Hints for LLM (included in description, not as separate field for JSON Schema compliance)
         if (!ann.hints().isEmpty()) {
-            schema.put("hints", ann.hints());
             description.append("\n\nHints: ").append(ann.hints());
         }
 
@@ -184,9 +182,7 @@ public class SchemaGenerator {
             schema.put("default", ann.defaultValue());
         }
 
-        // Override required status based on annotation
-        if (!ann.required()) {
-            schema.put("required", false);
-        }
+        // Note: required status is handled at root schema level, not property level (JSON Schema 2020-12)
+    }
     }
 }
