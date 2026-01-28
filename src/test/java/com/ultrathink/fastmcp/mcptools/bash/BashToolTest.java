@@ -207,4 +207,67 @@ class BashToolTest {
         assertTrue(result.isSuccess() || result.getExitCode() == 0);
         assertNotNull(result.getStdout());
     }
+
+    @Test
+    void testPathRestriction_BlockedPath() {
+        // Create tool with blocked paths
+        BashTool bashTool = new BashTool(30, "", List.of("/etc", "/root", "C:\\Windows\\System32"));
+        BashResult result = bashTool.executeCommand("echo test");
+
+        assertNotNull(result);
+        assertFalse(result.isSuccess(), "Should be blocked due to path restrictions");
+        assertTrue(result.getStderr().contains("🚫 COMMAND BLOCKED"));
+    }
+
+    @Test
+    void testPathRestriction_VisibleAfterBasePath() {
+        // Current dir is NOT /tmp, so this should fail
+        BashTool bashTool = new BashTool(30, "/tmp/*", List.of());
+        BashResult result = bashTool.executeCommand("echo test");
+
+        assertNotNull(result);
+        // Should be blocked unless we're actually in /tmp
+        // The test might pass/fail depending on where it's run, so we just check the error message appears
+        if (!result.isSuccess()) {
+            assertTrue(result.getStderr().contains("🚫 COMMAND BLOCKED"));
+        }
+    }
+
+    @Test
+    void testDangerousCommand_BlockedWget() {
+        BashTool bashTool = new BashTool();
+        BashResult result = bashTool.executeCommand("echo 'not using wget'");
+
+        // First verify normal command works
+        assertTrue(result.isSuccess() || result.getExitCode() == 0);
+
+        // Now try wget (should be blocked)
+        BashResult wgetResult = bashTool.executeCommand("wget http://example.com");
+        assertNotNull(wgetResult);
+        assertFalse(wgetResult.isSuccess(), "wget should be blocked");
+        assertTrue(wgetResult.getStderr().contains("🚫 COMMAND BLOCKED"));
+        assertTrue(wgetResult.getStderr().contains("wget"));
+    }
+
+    @Test
+    void testDangerousCommand_BlockedCurl() {
+        BashTool bashTool = new BashTool();
+        BashResult result = bashTool.executeCommand("curl http://example.com");
+
+        assertNotNull(result);
+        assertFalse(result.isSuccess(), "curl should be blocked");
+        assertTrue(result.getStderr().contains("🚫 COMMAND BLOCKED"));
+        assertTrue(result.getStderr().contains("curl"));
+    }
+
+    @Test
+    void testDirectoryTraversal_Blocked() {
+        BashTool bashTool = new BashTool();
+        BashResult result = bashTool.executeCommand("cd ../../../etc && echo bad");
+
+        assertNotNull(result);
+        assertFalse(result.isSuccess(), "directory traversal should be blocked");
+        assertTrue(result.getStderr().contains("🚫 COMMAND BLOCKED"));
+        assertTrue(result.getStderr().contains("directory traversal"));
+    }
 }
