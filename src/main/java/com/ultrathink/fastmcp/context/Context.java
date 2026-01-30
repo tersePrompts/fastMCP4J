@@ -145,7 +145,33 @@ public interface Context {
      * @return Map of header names to values, or empty map if not available
      */
     Map<String, String> getHeaders();
-    
+
+    // ========== Agent Lifecycle: Multi-Tenancy Support ==========
+
+    /**
+     * Get the tenant ID for this request.
+     * @return Tenant ID, or "default" if not set
+     */
+    default String getTenantId() {
+        return "default";
+    }
+
+    /**
+     * Get the user ID for this request.
+     * @return User ID, or null if not set
+     */
+    default String getUserId() {
+        return null;
+    }
+
+    /**
+     * Get the namespace for this request.
+     * @return Namespace, or "default" if not set
+     */
+    default String getNamespace() {
+        return "default";
+    }
+
     /**
      * Resource metadata information.
      */

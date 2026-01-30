@@ -1,51 +1,25 @@
 package com.ultrathink.fastmcp.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.StreamReadConstraints;
 import java.util.List;
 
 import com.ultrathink.fastmcp.exception.FastMcpException;
+import com.ultrathink.fastmcp.json.ObjectMapperFactory;
 import io.modelcontextprotocol.spec.McpSchema;
 
 /**
  * Converts method return values to MCP CallToolResult with security hardening.
- *
- * Security enhancements:
- * - StreamReadConstraints on ObjectMapper
- * - NON_NULL serialization to reduce payload size
  */
 public class ResponseMarshaller {
 
     private final ObjectMapper mapper;
 
     public ResponseMarshaller() {
-        this.mapper = createSecureObjectMapper();
+        this.mapper = ObjectMapperFactory.getShared();
     }
 
     public ResponseMarshaller(ObjectMapper customMapper) {
-        this.mapper = customMapper != null ? customMapper : createSecureObjectMapper();
-    }
-
-    /**
-     * Create a Jackson ObjectMapper with security constraints.
-     */
-    private static ObjectMapper createSecureObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-
-        // Set serialization inclusion to reduce payload size
-        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-
-        // Set stream read constraints for consistency
-        mapper.getFactory().setStreamReadConstraints(
-            StreamReadConstraints.builder()
-                .maxDocumentLength(10_000_000)
-                .maxStringLength(1_000_000)
-                .maxNameLength(100_000)
-                .build()
-        );
-
-        return mapper;
+        this.mapper = customMapper != null ? customMapper : ObjectMapperFactory.getShared();
     }
 
     public McpSchema.CallToolResult marshal(Object value) {

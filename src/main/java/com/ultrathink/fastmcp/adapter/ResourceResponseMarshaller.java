@@ -1,49 +1,23 @@
 package com.ultrathink.fastmcp.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.ultrathink.fastmcp.exception.FastMcpException;
+import com.ultrathink.fastmcp.json.ObjectMapperFactory;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 
 /**
  * Converts method return values to MCP ReadResourceResult with security hardening.
- * Handles different return types: String, byte[], objects, and collections.
- * String/byte[] → direct text/blob content. Objects → JSON serialized.
- *
- * Security enhancements:
- * - StreamReadConstraints on ObjectMapper
- * - NON_NULL serialization to reduce payload size
  */
 public class ResourceResponseMarshaller {
     private final ObjectMapper mapper;
 
     public ResourceResponseMarshaller() {
-        this.mapper = createSecureObjectMapper();
+        this.mapper = ObjectMapperFactory.getShared();
     }
 
     public ResourceResponseMarshaller(ObjectMapper customMapper) {
-        this.mapper = customMapper != null ? customMapper : createSecureObjectMapper();
-    }
-
-    /**
-     * Create a Jackson ObjectMapper with security constraints.
-     */
-    private static ObjectMapper createSecureObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-
-        // Set stream read constraints for consistency
-        mapper.getFactory().setStreamReadConstraints(
-            StreamReadConstraints.builder()
-                .maxDocumentLength(10_000_000)
-                .maxStringLength(1_000_000)
-                .maxNameLength(100_000)
-                .build()
-        );
-
-        return mapper;
+        this.mapper = customMapper != null ? customMapper : ObjectMapperFactory.getShared();
     }
 
     public McpSchema.ReadResourceResult marshal(Object value) {

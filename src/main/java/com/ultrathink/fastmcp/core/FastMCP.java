@@ -1,8 +1,8 @@
 package com.ultrathink.fastmcp.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.ultrathink.fastmcp.adapter.*;
+import com.ultrathink.fastmcp.json.ObjectMapperFactory;
 import com.ultrathink.fastmcp.annotations.McpMemory;
 import com.ultrathink.fastmcp.annotations.McpTodo;
 import com.ultrathink.fastmcp.annotations.McpPlanner;
@@ -42,6 +42,7 @@ import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.servlet.*;
 import reactor.core.publisher.Mono;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.BiFunction;
@@ -316,7 +317,7 @@ public final class FastMCP {
             serverName = meta.getName();
 
             HookManager hookManager = new HookManager(instance, meta.getTools());
-            var mapper = new JacksonMcpJsonMapper(createSecureObjectMapper());
+            var mapper = new JacksonMcpJsonMapper(ObjectMapperFactory.createNew());
 
             Object builder = createBuilder(mapper);
             configureServerInfo(builder, meta);
@@ -666,28 +667,10 @@ public final class FastMCP {
     @SuppressWarnings("unchecked")
     private Object parseJsonSchema(String schema) {
         try {
-            return createSecureObjectMapper().readValue(schema, Map.class);
+            return ObjectMapperFactory.getShared().readValue(schema, Map.class);
         } catch (Exception e) {
             return Map.of();
         }
-    }
-
-    /**
-     * Create a Jackson ObjectMapper with security constraints.
-     */
-    private static ObjectMapper createSecureObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-
-        // Set stream read constraints to prevent DoS via large payloads
-        mapper.getFactory().setStreamReadConstraints(
-            StreamReadConstraints.builder()
-                .maxDocumentLength(10_000_000)  // 10MB max document
-                .maxStringLength(1_000_000)     // 1MB max string
-                .maxNameLength(100_000)         // 100KB max name
-                .build()
-        );
-
-        return mapper;
     }
 
     // ========================================

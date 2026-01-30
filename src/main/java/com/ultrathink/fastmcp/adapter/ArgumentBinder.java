@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.ultrathink.fastmcp.context.Context;
 import com.ultrathink.fastmcp.context.ContextImpl;
 import com.ultrathink.fastmcp.context.McpContext;
-import com.fasterxml.jackson.core.StreamReadConstraints;
+import com.ultrathink.fastmcp.json.ObjectMapperFactory;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -44,19 +44,10 @@ public class ArgumentBinder {
     }
 
     /**
-     * Create a Jackson ObjectMapper with security constraints.
+     * Create a Jackson ObjectMapper with security constraints and deserialization config.
      */
     private static ObjectMapper createSecureObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-
-        // Set stream read constraints to prevent DoS via large payloads
-        mapper.getFactory().setStreamReadConstraints(
-            StreamReadConstraints.builder()
-                .maxDocumentLength(10_000_000)  // 10MB max document
-                .maxStringLength(1_000_000)     // 1MB max string
-                .maxNameLength(100_000)         // 100KB max name
-                .build()
-        );
+        ObjectMapper mapper = ObjectMapperFactory.createNew();
 
         // Configure deserialization settings
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
