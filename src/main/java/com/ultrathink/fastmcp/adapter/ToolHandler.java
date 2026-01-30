@@ -4,9 +4,12 @@ import com.ultrathink.fastmcp.context.ContextImpl;
 import com.ultrathink.fastmcp.context.McpContext;
 import com.ultrathink.fastmcp.hook.HookManager;
 import com.ultrathink.fastmcp.model.ToolMeta;
+import com.ultrathink.fastmcp.telemetry.TelemetryService;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import reactor.core.publisher.Mono;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,22 +39,35 @@ public class ToolHandler {
     private final ResponseMarshaller marshaller;
     private final String serverName;
     private final HookManager hookManager;
+    private final TelemetryService telemetry;
 
     // Session state storage - in production this could be backed by Redis, etc.
     private final Map<String, Map<String, Object>> sessionStates = new ConcurrentHashMap<>();
 
     public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder,
-                     ResponseMarshaller marshaller, String serverName, HookManager hookManager) {
+                     ResponseMarshaller marshaller, String serverName, HookManager hookManager,
+                     TelemetryService telemetry) {
         this.instance = instance;
         this.meta = meta;
         this.binder = binder;
         this.marshaller = marshaller;
         this.serverName = serverName;
         this.hookManager = hookManager;
+        this.telemetry = telemetry;
+    }
+
+    public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder,
+                     ResponseMarshaller marshaller, String serverName, HookManager hookManager) {
+        this(instance, meta, binder, marshaller, serverName, hookManager, null);
     }
 
     public BiFunction<McpAsyncServerExchange, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>> asHandler() {
         return (exchange, request) -> {
+            Instant start = Instant.now();
+            TelemetryService.Span span = telemetry != null
+                ? telemetry.createSpan("tool." + meta.getName(), null)
+                : null;
+
             setupContext(exchange);
             try {
                 if (hookManager != null) hookManager.executePreHooks(meta.getName(), request.arguments());
@@ -70,14 +86,31 @@ public class ToolHandler {
                     mono = Mono.just(marshaller.marshal(result));
                 }
 
-                return mono.doFinally(sig -> cleanupContext())
-                          .onErrorResume(e -> Mono.just(errorResult(e)));
+                return mono.doFinally(sig -> {
+                    recordTelemetry(start, true);
+                    if (span != null) span.close();
+                    cleanupContext();
+                }).onErrorResume(e -> {
+                    recordTelemetry(start, false);
+                    if (span != null) span.close();
+                    cleanupContext();
+                    return Mono.just(errorResult(e));
+                });
 
             } catch (Exception e) {
+                recordTelemetry(start, false);
+                if (span != null) span.close();
                 cleanupContext();
                 return Mono.just(errorResult(e));
             }
         };
+    }
+
+    private void recordTelemetry(Instant start, boolean success) {
+        if (telemetry != null) {
+            Duration duration = Duration.between(start, Instant.now());
+            telemetry.recordToolInvocation(meta.getName(), duration, success);
+        }
     }
     
     /**

@@ -9,7 +9,9 @@ import com.ultrathink.fastmcp.annotations.McpPlanner;
 import com.ultrathink.fastmcp.annotations.McpBash;
 import com.ultrathink.fastmcp.annotations.McpFileRead;
 import com.ultrathink.fastmcp.annotations.McpFileWrite;
+import com.ultrathink.fastmcp.annotations.McpTelemetry;
 import com.ultrathink.fastmcp.hook.HookManager;
+import com.ultrathink.fastmcp.telemetry.TelemetryService;
 import com.ultrathink.fastmcp.mcptools.bash.BashTool;
 import com.ultrathink.fastmcp.mcptools.fileread.FileReadTool;
 import com.ultrathink.fastmcp.mcptools.filewrite.FileWriteTool;
@@ -98,6 +100,9 @@ public final class FastMCP {
     private MemoryStore memoryStore;
     private TodoStore todoStore;
     private PlanStore planStore;
+
+    // Telemetry service (created from @McpTelemetry annotation)
+    private TelemetryService telemetry;
 
     // Server capabilities configuration
     private Consumer<ServerCapabilitiesBuilder> capabilitiesConfigurer = caps -> {
@@ -296,6 +301,7 @@ public final class FastMCP {
             McpAsyncServer mcp = build();
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 mcp.closeGracefully().block(Duration.ofSeconds(10));
+                if (telemetry != null) telemetry.close();
                 if (jetty != null) try { jetty.stop(); } catch (Exception ignored) {}
             }));
 
@@ -315,6 +321,12 @@ public final class FastMCP {
             Object instance = serverClass.getDeclaredConstructor().newInstance();
             ServerMeta meta = scanner.scan(serverClass);
             serverName = meta.getName();
+
+            // Create telemetry service if @McpTelemetry annotation is present
+            McpTelemetry telemetryAnn = serverClass.getAnnotation(McpTelemetry.class);
+            if (telemetryAnn != null && telemetryAnn.enabled()) {
+                this.telemetry = TelemetryService.create(serverName, telemetryAnn);
+            }
 
             HookManager hookManager = new HookManager(instance, meta.getTools());
             var mapper = new JacksonMcpJsonMapper(ObjectMapperFactory.createNew());
@@ -563,7 +575,7 @@ public final class FastMCP {
                 .build();
 
         var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(),
-            new ResponseMarshaller(), serverName, hookManager);
+            new ResponseMarshaller(), serverName, hookManager, telemetry);
         return new McpServerFeatures.AsyncToolSpecification(tool, null, handler.asHandler());
     }
 
@@ -662,6 +674,14 @@ public final class FastMCP {
     /** Clear the current transport context */
     public static void clearTransportContext() {
         TRANSPORT_CONTEXT.remove();
+    }
+
+    /**
+     * Get the telemetry service for the current server (if enabled).
+     * Can be used for manual instrumentation.
+     */
+    public TelemetryService getTelemetry() {
+        return telemetry;
     }
 
     @SuppressWarnings("unchecked")
