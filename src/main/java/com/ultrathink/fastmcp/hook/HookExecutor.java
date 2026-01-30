@@ -38,5 +38,5 @@ public interface HookExecutor {
      * @param sessionId The session ID
      * @param context Session context (tenantId, userId, etc.)
      */
-    default void execute(String sessionId, Map<String, Object> context) {}
+    default void executeSessionHook(String sessionId, Map<String, Object> context) {}
 }

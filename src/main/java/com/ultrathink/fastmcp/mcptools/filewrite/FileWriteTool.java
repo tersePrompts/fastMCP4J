@@ -212,7 +212,7 @@ public class FileWriteTool {
 
             // Use atomic write to prevent inconsistent state on interruption
             if (ATOMIC_WRITES_DEFAULT) {
-                writeAtomic(filePath, bytes);
+                writeAtomic(filePath, bytes, shouldCreateParents);
             } else {
                 // Direct write (not atomic)
                 Files.write(filePath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -228,10 +228,21 @@ public class FileWriteTool {
 
     /**
      * Write file atomically using a temporary file.
+     *
+     * @param target The target file path
+     * @param content The content to write
+     * @param createParents Whether to create parent directories if they don't exist
+     * @throws IOException if write fails
      */
-    private void writeAtomic(Path target, byte[] content) throws IOException {
+    private void writeAtomic(Path target, byte[] content, boolean createParents) throws IOException {
         Path parent = target.getParent() != null ? target.getParent() : Path.of(".");
-        if (!Files.exists(parent)) Files.createDirectories(parent);
+        if (!Files.exists(parent)) {
+            if (createParents) {
+                Files.createDirectories(parent);
+            } else {
+                throw new FileWriteException("Parent directory does not exist: " + parent);
+            }
+        }
 
         Path tempFile = Files.createTempFile(parent, ".tmp_" + target.getFileName(), null);
         try {

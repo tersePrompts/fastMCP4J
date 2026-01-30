@@ -81,7 +81,7 @@ public class HookChain {
             if (!isSessionHook(hook.type())) continue;
 
             try {
-                hook.executor().execute(sessionId, context);
+                hook.executor().executeSessionHook(sessionId, context);
             } catch (Exception e) {
                 log.error("Hook error during {} for session {}", hook.type(), sessionId, e);
             }

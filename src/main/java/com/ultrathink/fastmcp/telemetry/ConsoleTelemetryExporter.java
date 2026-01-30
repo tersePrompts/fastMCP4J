@@ -1,5 +1,8 @@
 package com.ultrathink.fastmcp.telemetry;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 import org.slf4j.Logger;
@@ -19,7 +22,8 @@ public class ConsoleTelemetryExporter implements java.util.function.Consumer<Tel
         StringBuilder sb = new StringBuilder();
         sb.append("\n╔═══════════════════════════════════════════════════════════════╗\n");
         sb.append(String.format("║ Telemetry Report: %-40s ║\n", data.serverName()));
-        sb.append(String.format("║ Time: %-52s ║\n", data.timestamp().format(FORMATTER)));
+        String timeStr = LocalDateTime.ofInstant(data.timestamp(), ZoneId.systemDefault()).format(FORMATTER);
+        sb.append(String.format("║ Time: %-52s ║\n", timeStr));
         sb.append("╠═══════════════════════════════════════════════════════════════╣\n");
 
         // Counters

@@ -104,10 +104,10 @@ public interface CacheProvider {
         }
 
         public CacheStats incrementMisses() {
-            return new CacheStats(totalEntries, hitCount, missCount + 1, hitRate());
+            return new CacheStats(totalEntries, hitCount, missCount + 1, calculateHitRate());
         }
 
-        private double hitRate() {
+        private double calculateHitRate() {
             long total = hitCount + missCount;
             return total > 0 ? (double) hitCount / total : 0.0;
         }
