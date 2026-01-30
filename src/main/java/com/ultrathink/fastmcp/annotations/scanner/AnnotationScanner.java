@@ -56,6 +56,11 @@ public class AnnotationScanner {
      */
     private void scanPackageForTools(String basePackage, List<ToolMeta> tools,
                                       List<ResourceMeta> resources, List<PromptMeta> prompts) {
+        // Validate package name to prevent path traversal
+        if (!isValidPackageName(basePackage)) {
+            throw new ValidationException("Invalid package name: " + basePackage);
+        }
+
         Reflections reflections = new Reflections(basePackage);
         Set<Class<?>> classes = reflections.getSubTypesOf(Object.class);
 
@@ -75,6 +80,25 @@ public class AnnotationScanner {
             resources.addAll(scanResources(clazz));
             prompts.addAll(scanPrompts(clazz));
         }
+    }
+
+    /**
+     * Validate that a package name is safe to scan.
+     * Prevents path traversal and injection attacks.
+     */
+    private boolean isValidPackageName(String packageName) {
+        if (packageName == null || packageName.isEmpty()) {
+            return false;
+        }
+
+        // Check for path traversal patterns
+        if (packageName.contains("..") || packageName.contains("/") ||
+            packageName.contains("\\") || packageName.startsWith(".")) {
+            return false;
+        }
+
+        // Must be a valid Java package name (dots and identifiers)
+        return packageName.matches("^[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*$");
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.ultrathink.fastmcp.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.ultrathink.fastmcp.adapter.*;
 import com.ultrathink.fastmcp.annotations.McpMemory;
 import com.ultrathink.fastmcp.annotations.McpTodo;
@@ -35,6 +36,8 @@ import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.*;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.*;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.servlet.*;
 import reactor.core.publisher.Mono;
@@ -313,7 +316,7 @@ public final class FastMCP {
             serverName = meta.getName();
 
             HookManager hookManager = new HookManager(instance, meta.getTools());
-            var mapper = new JacksonMcpJsonMapper(new ObjectMapper());
+            var mapper = new JacksonMcpJsonMapper(createSecureObjectMapper());
 
             Object builder = createBuilder(mapper);
             configureServerInfo(builder, meta);
@@ -513,6 +516,12 @@ public final class FastMCP {
         ServletHolder holder = new ServletHolder(servlet);
         holder.setAsyncSupported(true);
         ctx.addServlet(holder, mcpUri + "/*");
+
+        // Add security headers filter
+        FilterHolder securityFilter = new FilterHolder(new SecurityHeadersFilter());
+        securityFilter.setAsyncSupported(true);
+        ctx.addFilter(securityFilter, "/*");
+
         jetty.setHandler(ctx);
         jetty.start();
     }
@@ -525,6 +534,12 @@ public final class FastMCP {
         // SSE requires two endpoints: /sse for GET (SSE connection) and /mcp for POST (messages)
         ctx.addServlet(holder, "/sse/*");
         ctx.addServlet(holder, mcpUri + "/*");
+
+        // Add security headers filter
+        FilterHolder securityFilter = new FilterHolder(new SecurityHeadersFilter());
+        securityFilter.setAsyncSupported(true);
+        ctx.addFilter(securityFilter, "/*");
+
         jetty.setHandler(ctx);
         jetty.start();
     }
@@ -651,9 +666,64 @@ public final class FastMCP {
     @SuppressWarnings("unchecked")
     private Object parseJsonSchema(String schema) {
         try {
-            return new ObjectMapper().readValue(schema, Map.class);
+            return createSecureObjectMapper().readValue(schema, Map.class);
         } catch (Exception e) {
             return Map.of();
+        }
+    }
+
+    /**
+     * Create a Jackson ObjectMapper with security constraints.
+     */
+    private static ObjectMapper createSecureObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+
+        // Set stream read constraints to prevent DoS via large payloads
+        mapper.getFactory().setStreamReadConstraints(
+            StreamReadConstraints.builder()
+                .maxDocumentLength(10_000_000)  // 10MB max document
+                .maxStringLength(1_000_000)     // 1MB max string
+                .maxNameLength(100_000)         // 100KB max name
+                .build()
+        );
+
+        return mapper;
+    }
+
+    // ========================================
+    // Security Headers Filter
+    // ========================================
+
+    /**
+     * Filter that adds security headers to all HTTP responses.
+     */
+    private static class SecurityHeadersFilter implements Filter {
+        @Override
+        public void init(FilterConfig filterConfig) throws ServletException {
+            // No initialization needed
+        }
+
+        @Override
+        public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+                throws IOException, ServletException {
+            if (response instanceof HttpServletResponse httpResponse) {
+                // Prevent MIME type sniffing
+                httpResponse.setHeader("X-Content-Type-Options", "nosniff");
+                // Prevent clickjacking
+                httpResponse.setHeader("X-Frame-Options", "DENY");
+                // Enable browser XSS filtering
+                httpResponse.setHeader("X-XSS-Protection", "1; mode=block");
+                // Restrict referrer information
+                httpResponse.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+                // Content Security Policy (basic)
+                httpResponse.setHeader("Content-Security-Policy", "default-src 'self'");
+            }
+            chain.doFilter(request, response);
+        }
+
+        @Override
+        public void destroy() {
+            // No cleanup needed
         }
     }
 

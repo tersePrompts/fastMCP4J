@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import reactor.core.publisher.Mono;
@@ -23,7 +24,25 @@ import reactor.core.publisher.Mono;
  */
 public class MemoryTool {
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = createSecureObjectMapper();
+
+    /**
+     * Create a Jackson ObjectMapper with security constraints.
+     */
+    private static ObjectMapper createSecureObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+
+        // Set stream read constraints to prevent DoS via large payloads
+        mapper.getFactory().setStreamReadConstraints(
+            StreamReadConstraints.builder()
+                .maxDocumentLength(10_000_000)
+                .maxStringLength(1_000_000)
+                .maxNameLength(100_000)
+                .build()
+        );
+
+        return mapper;
+    }
 
     private final MemoryStore store;
     private final String rootPath;

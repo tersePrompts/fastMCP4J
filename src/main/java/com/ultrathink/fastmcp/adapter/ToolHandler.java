@@ -52,42 +52,27 @@ public class ToolHandler {
 
     public BiFunction<McpAsyncServerExchange, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>> asHandler() {
         return (exchange, request) -> {
+            setupContext(exchange);
             try {
-                // Create and set context for this request
-                setupContext(exchange);
-
-                // Execute pre-hooks
-                if (hookManager != null) {
-                    hookManager.executePreHooks(meta.getName(), request.arguments());
-                }
+                if (hookManager != null) hookManager.executePreHooks(meta.getName(), request.arguments());
 
                 Object[] args = binder.bind(meta.getMethod(), request.arguments());
                 Object result = meta.getMethod().invoke(instance, args);
 
-                Mono<McpSchema.CallToolResult> resultMono;
+                Mono<McpSchema.CallToolResult> mono;
                 if (meta.isAsync()) {
-                    resultMono = ((Mono<?>) result)
-                        .map(r -> {
-                            // Execute post-hooks for async
-                            if (hookManager != null) {
-                                hookManager.executePostHooks(meta.getName(), request.arguments(), r);
-                            }
-                            return marshaller.marshal(r);
-                        })
-                        .doFinally(signal -> cleanupContext());
+                    mono = ((Mono<?>) result).map(r -> {
+                        if (hookManager != null) hookManager.executePostHooks(meta.getName(), request.arguments(), r);
+                        return marshaller.marshal(r);
+                    });
                 } else {
-                    // Execute post-hooks for sync
-                    if (hookManager != null) {
-                        hookManager.executePostHooks(meta.getName(), request.arguments(), result);
-                    }
-                    resultMono = Mono.just(marshaller.marshal(result))
-                        .doFinally(signal -> cleanupContext());
+                    if (hookManager != null) hookManager.executePostHooks(meta.getName(), request.arguments(), result);
+                    mono = Mono.just(marshaller.marshal(result));
                 }
 
-                return resultMono.onErrorResume(e -> {
-                    cleanupContext();
-                    return Mono.just(errorResult(e));
-                });
+                return mono.doFinally(sig -> cleanupContext())
+                          .onErrorResume(e -> Mono.just(errorResult(e)));
+
             } catch (Exception e) {
                 cleanupContext();
                 return Mono.just(errorResult(e));

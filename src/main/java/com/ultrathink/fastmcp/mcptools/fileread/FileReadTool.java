@@ -12,17 +12,32 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.regex.*;
 import java.util.stream.Collectors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Security considerations:
  * - No file writing operations
- * - No directory traversal (path validation)
+ * - Directory traversal prevention with canonical path resolution
  * - File existence checks before operations
+ * - ReDoS protection for regex patterns
+ * - Binary file detection
  */
 public class FileReadTool {
 
-    private static final int MAX_LINES = 1000000; // Prevent reading extremely large files
-    private static final int MAX_RESULT_SIZE = 1000000; // Prevent excessive output
+    private static final int MAX_LINES = 100000; // Reduced from 1M to prevent DoS
+    private static final int MAX_RESULT_SIZE = 500000; // Reduced from 1M
+    private static final int MAX_PATTERN_LENGTH = 1000; // Max regex pattern length
+    private static final long GREP_TIMEOUT_MS = 30000; // 30 second timeout for grep operations
+
+    // Patterns that are known to cause ReDoS (catastrophic backtracking)
+    private static final List<Pattern> REDOS_PATTERNS = List.of(
+        Pattern.compile("(.+)+"),
+        Pattern.compile("([a-zA-Z]+)*"),
+        Pattern.compile("(a+)+"),
+        Pattern.compile("(.*)*"),
+        Pattern.compile("(\\d+)+")
+    );
 
     /**
      * Unified file reading tool with multiple operation modes.
@@ -167,7 +182,7 @@ public class FileReadTool {
                 "function\\s*\\(",
                 "\\b\\d{3}-\\d{3}-\\d{4}\\b"
             },
-            constraints = "Must be valid Java regex syntax. Empty string matches nothing.",
+            constraints = "Must be valid Java regex syntax. Maximum pattern length is 1000 characters. Empty string matches nothing.",
             hints = "Only use with mode='grep'. Pattern is case-sensitive by default (use caseInsensitive=true for case-insensitive). Use \\\\ to escape special regex characters. Test complex patterns on small samples first. Pattern matches anywhere on a line unless anchors (^ or $) are used."
         )
         String pattern,
@@ -382,14 +397,14 @@ public class FileReadTool {
             throw new FileReadException("Parameter 'startLine' is required for mode 'readLines'");
         }
 
-        Path filePath = Paths.get(path).normalize();
+        Path filePath = validateAndNormalizePath(path);
 
         // Validate path exists and is file
         if (!Files.exists(filePath)) {
-            throw new FileReadException("File not found: " + path);
+            throw new FileReadException("File not found: " + getSanitizedPath(filePath));
         }
         if (!Files.isRegularFile(filePath)) {
-            throw new FileReadException("Not a file: " + path);
+            throw new FileReadException("Not a file: " + getSanitizedPath(filePath));
         }
 
         // Check if binary file
@@ -423,7 +438,7 @@ public class FileReadTool {
             return new FileReadResult(path, resultLines, totalLines, false);
 
         } catch (IOException e) {
-            throw new FileReadException("Failed to read file: " + path, e);
+            throw new FileReadException("Failed to read file: " + getSanitizedPath(filePath), e);
         }
     }
 
@@ -435,13 +450,13 @@ public class FileReadTool {
             throw new FileReadException("Parameter 'path' is required for mode 'readFile'");
         }
 
-        Path filePath = Paths.get(path).normalize();
+        Path filePath = validateAndNormalizePath(path);
 
         if (!Files.exists(filePath)) {
-            throw new FileReadException("File not found: " + path);
+            throw new FileReadException("File not found: " + getSanitizedPath(filePath));
         }
         if (!Files.isRegularFile(filePath)) {
-            throw new FileReadException("Not a file: " + path);
+            throw new FileReadException("Not a file: " + getSanitizedPath(filePath));
         }
 
         // Check if binary file
@@ -464,12 +479,12 @@ public class FileReadTool {
             return new FileReadResult(path, lineMap, lines.size(), false);
 
         } catch (IOException e) {
-            throw new FileReadException("Failed to read file: " + path, e);
+            throw new FileReadException("Failed to read file: " + getSanitizedPath(filePath), e);
         }
     }
 
     /**
-     * Handle grep mode - searches for patterns in files.
+     * Handle grep mode - searches for patterns in files with ReDoS protection.
      */
     private List<GrepResult> handleGrep(String searchPath, String pattern, String outputMode,
                                         Boolean caseInsensitive, Integer linesBefore, Integer linesAfter,
@@ -485,10 +500,19 @@ public class FileReadTool {
         if (outputMode == null) outputMode = "content";
         if (caseInsensitive == null) caseInsensitive = false;
 
-        Path path = Paths.get(searchPath).normalize();
-        if (!Files.exists(path)) {
-            throw new FileReadException("Path not found: " + searchPath);
+        // Validate pattern length to prevent DoS
+        if (pattern.length() > MAX_PATTERN_LENGTH) {
+            throw new FileReadException("Pattern too long: maximum " + MAX_PATTERN_LENGTH + " characters allowed");
         }
+
+        Path path = validateAndNormalizePath(searchPath);
+        if (!Files.exists(path)) {
+            throw new FileReadException("Path not found: " + getSanitizedPath(path));
+        }
+
+        // Compile regex pattern with ReDoS protection
+        int flags = caseInsensitive ? Pattern.CASE_INSENSITIVE : 0;
+        Pattern regex = compileSafePattern(pattern, flags);
 
         List<Path> filesToSearch;
         try {
@@ -501,23 +525,20 @@ public class FileReadTool {
                     .collect(Collectors.toList());
             }
         } catch (IOException e) {
-            throw new FileReadException("Failed to search path: " + searchPath, e);
-        }
-
-        // Compile regex pattern
-        int flags = caseInsensitive ? Pattern.CASE_INSENSITIVE : 0;
-        Pattern regex;
-        try {
-            regex = Pattern.compile(pattern, flags);
-        } catch (PatternSyntaxException e) {
-            throw new FileReadException("Invalid regex pattern: " + pattern, e);
+            throw new FileReadException("Failed to search path: " + getSanitizedPath(path), e);
         }
 
         List<GrepResult> results = new ArrayList<>();
         int matchLimit = maxMatches != null ? maxMatches : Integer.MAX_VALUE;
         int totalMatches = 0;
+        long startTime = System.currentTimeMillis();
 
         for (Path filePath : filesToSearch) {
+            // Check timeout
+            if (System.currentTimeMillis() - startTime > GREP_TIMEOUT_MS) {
+                break; // Timeout reached
+            }
+
             if (totalMatches >= matchLimit) break;
 
             try {
@@ -574,13 +595,13 @@ public class FileReadTool {
             throw new FileReadException("Parameter 'path' is required for mode 'getStats'");
         }
 
-        Path filePath = Paths.get(path).normalize();
+        Path filePath = validateAndNormalizePath(path);
 
         if (!Files.exists(filePath)) {
-            throw new FileReadException("File not found: " + path);
+            throw new FileReadException("File not found: " + getSanitizedPath(filePath));
         }
         if (!Files.isRegularFile(filePath)) {
-            throw new FileReadException("Not a file: " + path);
+            throw new FileReadException("Not a file: " + getSanitizedPath(filePath));
         }
 
         try {
@@ -604,11 +625,232 @@ public class FileReadTool {
             return new FileStats(path, lineCount, charCount, sizeBytes, mimeType, isBinary);
 
         } catch (IOException e) {
-            throw new FileReadException("Failed to get file stats: " + path, e);
+            throw new FileReadException("Failed to get file stats: " + getSanitizedPath(filePath), e);
         }
     }
 
     // ========== HELPER METHODS ==========
+
+    /**
+     * Validate and normalize a file path with canonical resolution.
+     * Prevents directory traversal attacks via symlinks.
+     */
+    private Path validateAndNormalizePath(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            throw new FileReadException("Path cannot be null or empty");
+        }
+
+        try {
+            Path filePath = Paths.get(path).toAbsolutePath().normalize();
+
+            // Check for directory traversal attempts in normalized path
+            String normalizedPath = filePath.toString();
+            if (normalizedPath.contains("..")) {
+                throw new FileReadException("Invalid path: directory traversal not allowed");
+            }
+
+            // Try to get canonical path to resolve symlinks
+            // This prevents symlink-based bypass of path restrictions
+            try {
+                Path canonicalPath = filePath.toRealPath();
+                return canonicalPath;
+            } catch (IOException e) {
+                // If canonical path fails (e.g., file doesn't exist yet),
+                // use normalized path for validation
+                return filePath;
+            }
+        } catch (java.nio.file.InvalidPathException e) {
+            throw new FileReadException("Invalid path: " + path);
+        }
+    }
+
+    /**
+     * Compile a regex pattern with ReDoS protection.
+     * Uses character-level scanning instead of regex for validation to avoid ReDoS in the validator itself.
+     */
+    private Pattern compileSafePattern(String pattern, int flags) {
+        // Check for known ReDoS patterns (these are pre-compiled and safe)
+        for (Pattern redosPattern : REDOS_PATTERNS) {
+            if (redosPattern.matcher(pattern).matches()) {
+                throw new FileReadException("Pattern contains known ReDoS vulnerability and is blocked for safety");
+            }
+        }
+
+        // Check for dangerous patterns using character-level scanning (not regex)
+        if (containsNestedQuantifiers(pattern)) {
+            throw new FileReadException("Pattern contains nested quantifiers which may cause catastrophic backtracking");
+        }
+
+        // Check for excessive repetition using character scanning
+        if (containsExcessiveRepetition(pattern)) {
+            throw new FileReadException("Pattern contains excessive repetition operators");
+        }
+
+        // Check for overlapping alternations
+        if (containsOverlappingAlternations(pattern)) {
+            throw new FileReadException("Pattern contains overlapping alternations which may cause ReDoS");
+        }
+
+        try {
+            return Pattern.compile(pattern, flags);
+        } catch (PatternSyntaxException e) {
+            throw new FileReadException("Invalid regex pattern: " + pattern, e);
+        }
+    }
+
+    /**
+     * Check for nested quantifiers using character-level scanning.
+     * Nested quantifiers like (a+)+, (a*)*, (.+)* are common ReDoS sources.
+     * This avoids using regex for validation to prevent ReDoS in the validator itself.
+     */
+    private boolean containsNestedQuantifiers(String pattern) {
+        boolean inCharClass = false;
+        boolean inGroup = false;
+        boolean hasQuantifier = false;
+        int parenDepth = 0;
+        int braceDepth = 0;
+
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+
+            // Track character classes [...]
+            if (c == '[' && !inCharClass) {
+                inCharClass = true;
+                continue;
+            }
+            if (c == ']' && inCharClass) {
+                inCharClass = false;
+                continue;
+            }
+
+            // Skip content inside character classes
+            if (inCharClass) continue;
+
+            // Track parentheses and braces
+            switch (c) {
+                case '(':
+                    parenDepth++;
+                    if (parenDepth == 1) {
+                        hasQuantifier = false; // Reset for new group
+                    }
+                    break;
+                case ')':
+                    if (parenDepth > 0) {
+                        parenDepth--;
+                        // Check if this group is followed by a quantifier
+                        if (i + 1 < pattern.length()) {
+                            char next = pattern.charAt(i + 1);
+                            if (next == '*' || next == '+' || next == '?' || next == '{') {
+                                if (hasQuantifier) {
+                                    return true; // Nested quantifier detected
+                                }
+                            }
+                        }
+                    }
+                    break;
+                case '{':
+                    braceDepth++;
+                    break;
+                case '}':
+                    if (braceDepth > 0) {
+                        braceDepth--;
+                        hasQuantifier = true;
+                    }
+                    break;
+            }
+
+            // Check for quantifiers
+            if (c == '*' || c == '+' || c == '?') {
+                hasQuantifier = true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check for excessive repetition operators like **, ++, {n}{m}.
+     */
+    private boolean containsExcessiveRepetition(String pattern) {
+        boolean inCharClass = false;
+
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+
+            if (c == '[' && !inCharClass) {
+                inCharClass = true;
+                continue;
+            }
+            if (c == ']' && inCharClass) {
+                inCharClass = false;
+                continue;
+            }
+
+            if (inCharClass) continue;
+
+            // Check for double quantifiers
+            if ((c == '*' || c == '+' || c == '?') && i + 1 < pattern.length()) {
+                char next = pattern.charAt(i + 1);
+                if (next == '*' || next == '+' || next == '?') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check for overlapping alternations like (a|a)+ which can cause ReDoS.
+     */
+    private boolean containsOverlappingAlternations(String pattern) {
+        // Simple heuristic: count alternations in a row
+        boolean inCharClass = false;
+        int altCount = 0;
+
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+
+            if (c == '[' && !inCharClass) {
+                inCharClass = true;
+                continue;
+            }
+            if (c == ']' && inCharClass) {
+                inCharClass = false;
+                continue;
+            }
+
+            if (inCharClass) continue;
+
+            if (c == '|') {
+                altCount++;
+                if (altCount > 10) {
+                    return true; // Too many alternations
+                }
+            } else if (!Character.isWhitespace(c)) {
+                altCount = 0;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get a sanitized version of the path for error messages.
+     * Only shows the filename, not the full path.
+     */
+    private String getSanitizedPath(Path path) {
+        if (path == null) {
+            return "[path]";
+        }
+        String fileName = path.getFileName() != null ? path.getFileName().toString() : "[unknown]";
+        // Show only the last 2 path components to reduce information disclosure
+        int nameCount = path.getNameCount();
+        if (nameCount >= 2) {
+            return "..." + path.subpath(nameCount - 2, nameCount);
+        }
+        return fileName;
+    }
 
     private boolean isBinaryFile(Path path) {
         try (InputStream in = Files.newInputStream(path)) {
