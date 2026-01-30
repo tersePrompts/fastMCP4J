@@ -9,7 +9,7 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
 [![Maven](https://img.shields.io/badge/Maven-3.8+-red.svg)](https://maven.apache.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-168%20Passing-brightgreen.svg)](src/test/java)
+[![Tests](https://img.shields.io/badge/Tests-197%20Passing-brightgreen.svg)](src/test/java)
 
 **Lightweight. 12 dependencies. No containers.**
 
@@ -17,7 +17,7 @@ Just annotate and run. See below →
 
 </div>
 
-**Note**: Beta release (v0.3.0-beta) — JSON Schema 2020-12 compliant, security fixes. API stable.
+**Note**: Beta release (v0.3.1-beta) — Multi-class modules, bash tools, telemetry. API stable.
 
 ---
 
@@ -30,14 +30,14 @@ Just annotate and run. See below →
 <dependency>
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.3.0-beta</version>
+    <version>0.3.1-beta</version>
 </dependency>
 ```
 
 **Gradle:**
 ```groovy
 dependencies {
-    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.3.0-beta'
+    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.3.1-beta'
 }
 ```
 
@@ -133,6 +133,52 @@ public class MyServer {
 }
 ```
 
+### Organize tools across multiple classes
+
+```java
+@McpServer(
+    name = "MyServer",
+    version = "1.0",
+    modules = {StringTools.class, MathTools.class}  // Explicit modules
+)
+public class MyServer {
+    // Tools from StringTools and MathTools are included
+}
+```
+
+Or use package scanning for auto-discovery:
+
+```java
+@McpServer(
+    name = "MyServer",
+    version = "1.0",
+    scanBasePackage = "com.example.tools"  // Auto-discover all tools
+)
+public class MyServer {
+    // All @McpTool classes in the package are included
+}
+```
+
+### Add bash/shell execution
+
+```java
+@McpServer(name = "MyServer", version = "1.0")
+@McpBash(timeout = 30)  // Shell command execution with security guardrails
+public class MyServer {
+    // Provides 'execute_command' tool with OS-aware shell selection
+}
+```
+
+### Add telemetry
+
+```java
+@McpServer(name = "MyServer", version = "1.0")
+@McpTelemetry(enabled = true, exportConsole = true)  // Metrics & tracing
+public class MyServer {
+    // Automatic tool invocation tracking with console export
+}
+```
+
 ### Choose transport
 
 ```java
@@ -223,6 +269,13 @@ Add ONE annotation, get complete functionality.
 | `@McpContext` | PARAMETER | Inject request context |
 | `@McpPreHook` | METHOD | Run before tool call |
 | `@McpPostHook` | METHOD | Run after tool call |
+| `@McpBash` | TYPE | Enable bash/shell command execution tool |
+| `@McpTelemetry` | TYPE | Enable metrics and tracing |
+| `@McpMemory` | TYPE | Enable memory tools |
+| `@McpTodo` | TYPE | Enable todo/task management tools |
+| `@McpPlanner` | TYPE | Enable planning tools |
+| `@McpFileRead` | TYPE | Enable file reading tools |
+| `@McpFileWrite` | TYPE | Enable file writing tools |
 
 **@McpParam advanced options:**
 ```java
@@ -331,6 +384,79 @@ public class MyServer {
 - `reportProgress(int, String)` — Report progress percentage
 - `listResources()` — List available resources
 - `listPrompts()` — List available prompts
+
+---
+
+## New Features
+
+### @McpBash — Shell Command Execution
+
+Execute shell commands with OS-aware shell selection and built-in security guardrails.
+
+```java
+@McpServer(name = "MyServer", version = "1.0")
+@McpBash(
+    timeout = 30,                          // Command timeout in seconds
+    visibleAfterBasePath = "/sandbox/*",   // Whitelist allowed directories
+    notAllowedPaths = {"/etc", "/root"}    // Blacklist dangerous paths
+)
+public class MyServer { }
+```
+
+**Security features:**
+- Directory validation (whitelist/blacklist)
+- Dangerous command blocking (rm -rf, wget, curl, ssh, etc.)
+- Directory traversal prevention
+- Cross-platform path handling (Windows/Unix)
+
+**Supported shells:**
+- Windows: `cmd.exe`
+- macOS: `/bin/zsh`
+- Linux: `/bin/bash`
+
+### @McpTelemetry — Metrics & Tracing
+
+Collect metrics and traces for tool invocations.
+
+```java
+@McpServer(name = "MyServer", version = "1.0")
+@McpTelemetry(
+    enabled = true,
+    exportConsole = true,              // Human-readable output
+    exportOtlp = false,                // OpenTelemetry export
+    sampleRate = 1.0,                  // 100% sampling
+    includeArguments = false,          // Don't log sensitive args
+    metricExportIntervalMs = 60_000
+)
+public class MyServer { }
+```
+
+**Collected metrics:**
+- Tool invocation counters
+- Execution duration histograms
+- Error rates
+
+### Multi-Class Tool Organization
+
+Split tools across multiple classes for better organization.
+
+**Manual modules** (fast, explicit):
+```java
+@McpServer(
+    name = "MyServer",
+    version = "1.0",
+    modules = {StringTools.class, MathTools.class}
+)
+```
+
+**Package scanning** (convenient):
+```java
+@McpServer(
+    name = "MyServer",
+    version = "1.0",
+    scanBasePackage = "com.example.tools"
+)
+```
 
 ---
 
