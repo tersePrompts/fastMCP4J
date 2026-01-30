@@ -203,16 +203,22 @@ public class FileWriteTool {
         }
 
         boolean fileExisted = Files.exists(filePath);
+        Path parent = filePath.getParent();
+
+        // Check if parent directory exists when createParents is false
+        if (!shouldCreateParents && parent != null && !Files.exists(parent)) {
+            throw new FileWriteException("Parent directory does not exist: " + getSanitizedPath(parent) + " (use createParents=true to create)");
+        }
 
         try {
             // Create parent directories if requested
-            if (shouldCreateParents && filePath.getParent() != null) {
-                Files.createDirectories(filePath.getParent());
+            if (shouldCreateParents && parent != null) {
+                Files.createDirectories(parent);
             }
 
             // Use atomic write to prevent inconsistent state on interruption
             if (ATOMIC_WRITES_DEFAULT) {
-                writeAtomic(filePath, bytes);
+                writeAtomic(filePath, bytes, shouldCreateParents);
             } else {
                 // Direct write (not atomic)
                 Files.write(filePath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -229,9 +235,11 @@ public class FileWriteTool {
     /**
      * Write file atomically using a temporary file.
      */
-    private void writeAtomic(Path target, byte[] content) throws IOException {
+    private void writeAtomic(Path target, byte[] content, boolean createParents) throws IOException {
         Path parent = target.getParent() != null ? target.getParent() : Path.of(".");
-        if (!Files.exists(parent)) Files.createDirectories(parent);
+        if (createParents && !Files.exists(parent)) {
+            Files.createDirectories(parent);
+        }
 
         Path tempFile = Files.createTempFile(parent, ".tmp_" + target.getFileName(), null);
         try {

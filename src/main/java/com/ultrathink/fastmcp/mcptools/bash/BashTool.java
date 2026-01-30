@@ -99,7 +99,11 @@ public class BashTool implements AutoCloseable {
         Pattern.compile("\\|\\s*\\|"),                    // Pipeline chaining
         Pattern.compile("powershell\\s+-.*\\|.*;"),       // PowerShell command chaining
         Pattern.compile("curl\\s+.*\\|.*&"),              // Download and execute
-        Pattern.compile("bitsadmin\\s+")                 // Background Intelligent Transfer
+        Pattern.compile("bitsadmin\\s+"),                // Background Intelligent Transfer
+        Pattern.compile("(^|\\s)wget\\s+"),              // wget download tool (cross-platform)
+        Pattern.compile("(^|\\s)curl\\s+"),              // curl download tool (cross-platform)
+        Pattern.compile("(^|\\s)nc\\s+-l"),              // Netcat listener (cross-platform)
+        Pattern.compile("(^|\\s)ncat\\s+-l")             // Ncat listener (cross-platform)
     );
 
     private final int timeoutSeconds;
@@ -267,6 +271,13 @@ public class BashTool implements AutoCloseable {
         // Trim leading/trailing whitespace
         command = command.trim();
 
+        // Check for directory traversal attempts FIRST (before other checks)
+        // This ensures the specific "directory traversal" message is returned
+        if (command.contains("../") || command.contains("..\\") ||
+            command.contains("~/.") || command.contains("~\\.")) {
+            return "🚫 COMMAND BLOCKED: directory traversal (../) not allowed";
+        }
+
         // In safe mode, enforce strict validation
         if (safeMode) {
             String safeModeError = validateSafeMode(command);
@@ -291,12 +302,6 @@ public class BashTool implements AutoCloseable {
         String dangerousError = validateDangerousPatterns(command);
         if (dangerousError != null) {
             return dangerousError;
-        }
-
-        // Check for directory traversal attempts
-        if (command.contains("../") || command.contains("..\\") ||
-            command.contains("~/.") || command.contains("~\\.")) {
-            return "🚫 COMMAND BLOCKED: directory traversal (../) not allowed";
         }
 
         return null; // Valid

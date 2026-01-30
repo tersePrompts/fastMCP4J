@@ -533,7 +533,7 @@ public final class FastMCP {
         // Add security headers filter
         FilterHolder securityFilter = new FilterHolder(new SecurityHeadersFilter());
         securityFilter.setAsyncSupported(true);
-        ctx.addFilter(securityFilter, "/*");
+        ctx.addFilter(securityFilter, "/*", java.util.EnumSet.of(jakarta.servlet.DispatcherType.REQUEST));
 
         jetty.setHandler(ctx);
         jetty.start();
@@ -551,7 +551,7 @@ public final class FastMCP {
         // Add security headers filter
         FilterHolder securityFilter = new FilterHolder(new SecurityHeadersFilter());
         securityFilter.setAsyncSupported(true);
-        ctx.addFilter(securityFilter, "/*");
+        ctx.addFilter(securityFilter, "/*", java.util.EnumSet.of(jakarta.servlet.DispatcherType.REQUEST));
 
         jetty.setHandler(ctx);
         jetty.start();

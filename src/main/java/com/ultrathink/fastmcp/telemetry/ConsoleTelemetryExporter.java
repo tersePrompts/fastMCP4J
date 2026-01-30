@@ -19,7 +19,7 @@ public class ConsoleTelemetryExporter implements java.util.function.Consumer<Tel
         StringBuilder sb = new StringBuilder();
         sb.append("\n╔═══════════════════════════════════════════════════════════════╗\n");
         sb.append(String.format("║ Telemetry Report: %-40s ║\n", data.serverName()));
-        sb.append(String.format("║ Time: %-52s ║\n", data.timestamp().format(FORMATTER)));
+        sb.append(String.format("║ Time: %-52s ║\n", FORMATTER.format(data.timestamp())));
         sb.append("╠═══════════════════════════════════════════════════════════════╣\n");
 
         // Counters

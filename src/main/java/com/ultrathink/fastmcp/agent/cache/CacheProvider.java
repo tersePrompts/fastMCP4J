@@ -107,7 +107,7 @@ public interface CacheProvider {
             return new CacheStats(totalEntries, hitCount, missCount + 1, hitRate());
         }
 
-        private double hitRate() {
+        public double hitRate() {
             long total = hitCount + missCount;
             return total > 0 ? (double) hitCount / total : 0.0;
         }
