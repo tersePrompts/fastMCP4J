@@ -1,7 +1,9 @@
 package com.ultrathink.fastmcp.hook;
 
+import com.ultrathink.fastmcp.agent.lifecycle.SessionLifecycle;
 import com.ultrathink.fastmcp.annotations.McpPreHook;
 import com.ultrathink.fastmcp.annotations.McpPostHook;
+import com.ultrathink.fastmcp.annotations.McpSessionLifecycle;
 import com.ultrathink.fastmcp.model.ToolMeta;
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,16 +32,28 @@ public class HookManager {
     private final Object serverInstance;
     private final List<HookMethod> preHooks;
     private final List<HookMethod> postHooks;
+    private final List<SessionLifecycleMethod> sessionLifecycleHooks;
 
     // Security: Only allow hooks from the same classloader as the server instance
     private final ClassLoader serverClassLoader;
+    private SessionLifecycle sessionLifecycle;
 
     public HookManager(Object serverInstance, List<ToolMeta> tools) {
         this.serverInstance = serverInstance;
         this.serverClassLoader = serverInstance.getClass().getClassLoader();
         this.preHooks = new ArrayList<>();
         this.postHooks = new ArrayList<>();
+        this.sessionLifecycleHooks = new ArrayList<>();
         scanHooks(serverInstance.getClass(), tools);
+    }
+
+    /** Set the SessionLifecycle manager for session lifecycle hooks. */
+    public void setSessionLifecycle(SessionLifecycle sessionLifecycle) {
+        this.sessionLifecycle = sessionLifecycle;
+        // Register as listener for session lifecycle events
+        for (SessionLifecycleMethod hook : sessionLifecycleHooks) {
+            sessionLifecycle.addListener(new SessionLifecycleAdapter(hook));
+        }
     }
 
     private void scanHooks(Class<?> clazz, List<ToolMeta> tools) {
@@ -60,12 +74,18 @@ public class HookManager {
                 String toolName = ann.toolName().isEmpty() ? inferToolName(method) : ann.toolName();
                 postHooks.add(new HookMethod(method, toolName, ann.order(), false));
             }
+            if (method.isAnnotationPresent(McpSessionLifecycle.class)) {
+                McpSessionLifecycle ann = method.getAnnotation(McpSessionLifecycle.class);
+                sessionLifecycleHooks.add(new SessionLifecycleMethod(method, ann.value(), 0));
+            }
         }
 
         preHooks.sort(Comparator.comparingInt(HookMethod::order));
         postHooks.sort(Comparator.comparingInt(HookMethod::order));
+        sessionLifecycleHooks.sort(Comparator.comparingInt(SessionLifecycleMethod::order));
 
-        log.info("Registered {} pre-hooks and {} post-hooks", preHooks.size(), postHooks.size());
+        log.info("Registered {} pre-hooks, {} post-hooks, {} session lifecycle hooks",
+            preHooks.size(), postHooks.size(), sessionLifecycleHooks.size());
     }
 
     /** Validate hook method is safe - same classloader and safe parameter types. */
@@ -199,4 +219,56 @@ public class HookManager {
     }
 
     private record HookMethod(Method method, String toolName, int order, boolean isPre) {}
+
+    /** Record for session lifecycle hook methods. */
+    private record SessionLifecycleMethod(Method method, McpSessionLifecycle.Event event, int order) {}
+
+    /** Adapter to convert session lifecycle hooks to SessionLifecycleListener. */
+    private class SessionLifecycleAdapter implements SessionLifecycle.SessionLifecycleListener {
+        private final SessionLifecycleMethod hook;
+
+        SessionLifecycleAdapter(SessionLifecycleMethod hook) {
+            this.hook = hook;
+        }
+
+        @Override
+        public void onSessionBootstrap(String sessionId, SessionLifecycle.BootstrapConfig config) {
+            if (hook.event == McpSessionLifecycle.Event.BOOTSTRAP) {
+                invokeHookMethod(sessionId, config);
+            }
+        }
+
+        @Override
+        public void onSessionStart(String sessionId) {
+            if (hook.event == McpSessionLifecycle.Event.START) {
+                invokeHookMethod(sessionId);
+            }
+        }
+
+        @Override
+        public void onSessionExpiring(String sessionId, SessionLifecycle.ExpiryReason reason) {
+            if (hook.event == McpSessionLifecycle.Event.EXPIRING) {
+                invokeHookMethod(sessionId, reason);
+            }
+        }
+
+        @Override
+        public void onSessionEnd(String sessionId, SessionLifecycle.EndReason reason) {
+            if (hook.event == McpSessionLifecycle.Event.END) {
+                invokeHookMethod(sessionId, reason);
+            }
+        }
+
+        private void invokeHookMethod(Object... args) {
+            try {
+                if (!Modifier.isPublic(hook.method.getModifiers())) {
+                    hook.method.setAccessible(true);
+                }
+                hook.method.invoke(serverInstance, args);
+            } catch (Exception e) {
+                log.error("Session lifecycle hook failed: {} - {}",
+                    hook.method.getName(), e.getMessage(), e);
+            }
+        }
+    }
 }
