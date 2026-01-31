@@ -1,19 +1,19 @@
 name: Publish to Maven Central
 
 on:
+  push:
+    branches:
+      - main
   release:
     types: [created]
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to publish (e.g. 0.2.0)'
-        required: true
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: write
 
     steps:
       - uses: actions/checkout@v4
@@ -29,10 +29,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Update version for workflow dispatch
-        if: github.event_name == 'workflow_dispatch'
-        run: mvn versions:set -DnewVersion=${{ github.event.inputs.version }}
-
       - name: Cache Maven packages
         uses: actions/cache@v4
         with:
@@ -45,8 +41,89 @@ jobs:
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           gpg --list-secret-keys
 
+      - name: Get version from pom.xml
+        id: version
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Deploying version: $VERSION"
+
       - name: Publish to Maven Central
-        run: mvn --batch-mode clean deploy -DskipTests
+        run: mvn --batch-mode clean deploy -Prelease -DskipTests -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }}
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
           MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+
+      - name: Create approval issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{ steps.version.outputs.version }}';
+            const runUrl = 'https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Maven Central Release Approval - ${version}`,
+              body: `## Maven Central Deployment Ready for Approval
+
+              ### Version
+              **${version}**
+
+              ### Deployment Details
+              - **Workflow Run**: ${runUrl}
+              - **Commit**: \`${{ github.sha }}\`
+              - **Branch**: \`${{ github.ref_name }}\`
+              - **Triggered by**: @${{ github.actor }}
+
+              ---
+
+              ## Approval Required
+
+              The artifacts have been uploaded to Sonatype Central and require manual approval.
+
+              ### Steps to Approve:
+
+              1. **Login to Sonatype Central**
+                 - URL: https://central.sonatype.com/
+                 - Use your Sonatype account credentials
+
+              2. **Navigate to Deployments**
+                 - Click "Deployments" in the left sidebar
+                 - Look for version **${version}**
+
+              3. **Review the Deployment**
+                 - Verify all components are valid
+                 - Check that no security warnings exist
+
+              4. **Approve the Release**
+                 - Click the "..." menu on the deployment
+                 - Select "Publish" or "Approve"
+                 - Confirm the action
+
+              5. **Verify**
+                 - The artifact should appear in Maven Central within 10-30 minutes
+                 - Check at: https://central.sonatype.com/artifact/io.github.terseprompts.fastmcp/fastmcp4j/versions
+
+              ---
+
+              ### Useful Links
+              - [All Deployments](https://central.sonatype.com/deployments)
+              - [Project Dashboard](https://central.sonatype.com/publishing/io.github.terseprompts.fastmcp)
+              - [Release on Maven Central](https://central.sonatype.com/artifact/io.github.terseprompts.fastmcp/fastmcp4j)
+
+              ---
+
+              ### Troubleshooting
+
+              If the deployment fails:
+              - Check the [workflow logs](${runUrl})
+              - Verify GPG signing worked correctly
+              - Ensure your OSSRH token is valid
+
+              Once approved, close this issue.`,
+              labels: ['release', 'maven-central'],
+              assignees: ['${{ github.repository_owner }}']
+            });
+
+            console.log(`Created issue #${issue.data.number}`);

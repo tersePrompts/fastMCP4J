@@ -71,7 +71,7 @@ def test_manual_modules_server():
 
     # Actually, we need to run via Maven
     process = subprocess.Popen(
-        ["mvn", "exec:java", "-Dexec.mainClass=com.ultrathink.fastmcp.example.ManualModulesServer"],
+        ["mvn", "exec:java", "-Dexec.mainClass=io.github.terseprompts.fastmcp.example.ManualModulesServer"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

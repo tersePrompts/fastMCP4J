@@ -10,7 +10,7 @@ The `echo-server-config.json` file contains a sample configuration for connectin
 
 1. Start the EchoServer:
    ```bash
-   mvn exec:java -Dexec.mainClass="com.ultrathink.fastmcp.example.EchoServer"
+   mvn exec:java -Dexec.mainClass="io.github.terseprompts.fastmcp.example.EchoServer"
    ```
 
 2. The server will start on `http://localhost:3002/mcp`
@@ -72,7 +72,7 @@ For stdio transport (requires JAR on classpath):
       "args": [
         "-cp",
         "target/fastmcp-java-0.1.0-SNAPSHOT.jar",
-        "com.ultrathink.fastmcp.example.EchoServer"
+        "io.github.terseprompts.fastmcp.example.EchoServer"
       ]
     }
   }

@@ -9,7 +9,7 @@
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
 [![Maven](https://img.shields.io/badge/Maven-3.8+-red.svg)](https://maven.apache.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-197%20Passing-brightgreen.svg)](src/test/java)
+[![Tests](https://img.shields.io/badge/Tests-211%20Passing-brightgreen.svg)](src/test/java)
 
 **Lightweight. 12 dependencies. No containers.**
 
@@ -69,7 +69,7 @@ mvn exec:java -Dexec.mainClass="com.example.MyAssistant"
 
 **That's it. Your MCP server is running.**
 
-**Working example**: [EchoServer.java](https://github.com/tersePrompts/fastMCP4J/blob/main/src/test/java/com/ultrathink/fastmcp/example/EchoServer.java)
+**Working example**: [EchoServer.java](https://github.com/tersePrompts/fastMCP4J/blob/main/src/test/java/io/github/terseprompts/fastmcp/example/EchoServer.java)
 
 ---
 
@@ -511,7 +511,7 @@ MIT © 2026
 
 **Less boilerplate. More shipping.**
 
-[Get started](#quick-start-2-minutes) • [Examples](https://github.com/tersePrompts/fastMCP4J/blob/main/src/test/java/com/ultrathink/fastmcp/example/EchoServer.java) • [Docs](#documentation)
+[Get started](#quick-start-2-minutes) • [Examples](https://github.com/tersePrompts/fastMCP4J/blob/main/src/test/java/io/github/terseprompts/fastmcp/example/EchoServer.java) • [Docs](#documentation)
 
 Made with ❤️ for the Java community
 </div>
