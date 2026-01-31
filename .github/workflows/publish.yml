@@ -1,13 +1,12 @@
 name: Publish to Maven Central
 
 on:
+  push:
+    branches:
+      - main
   release:
     types: [created]
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to publish (e.g. 0.2.0)'
-        required: true
 
 jobs:
   publish:
@@ -29,10 +28,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Update version for workflow dispatch
-        if: github.event_name == 'workflow_dispatch'
-        run: mvn versions:set -DnewVersion=${{ github.event.inputs.version }}
-
       - name: Cache Maven packages
         uses: actions/cache@v4
         with:
@@ -46,7 +41,7 @@ jobs:
           gpg --list-secret-keys
 
       - name: Publish to Maven Central
-        run: mvn --batch-mode clean deploy -DskipTests
+        run: mvn --batch-mode clean deploy -Prelease -DskipTests -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }}
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
           MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
