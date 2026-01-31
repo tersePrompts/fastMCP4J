@@ -209,6 +209,9 @@ class TelemetryServiceTest {
         TelemetryService.Span parentSpan = service.createSpan("parentOperation", null);
         assertNotNull(parentSpan, "Parent span should be created");
 
+        // Set trace context so child can inherit
+        service.setTraceContext(parentSpan.getTraceId(), parentSpan.getSpanId());
+
         TelemetryService.Span childSpan = service.createSpan("childOperation", parentSpan.getSpanId());
         assertNotNull(childSpan, "Child span should be created");
         assertEquals(parentSpan.getTraceId(), childSpan.getTraceId(),
@@ -216,6 +219,7 @@ class TelemetryServiceTest {
         assertEquals(parentSpan.getSpanId(), childSpan.getParentSpanId(),
                 "Child span should have parent span ID as its parent");
 
+        service.clearTraceContext();
         childSpan.close();
         parentSpan.close();
         service.close();
