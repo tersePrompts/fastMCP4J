@@ -267,10 +267,10 @@ Add ONE annotation, get complete functionality.
 | `@McpParam` | PARAMETER | Add description, examples, constraints, defaults |
 | `@McpAsync` | METHOD | Make tool async (return `Mono<?>`) |
 | `@McpContext` | PARAMETER | Inject request context |
-| `@McpPreHook` | METHOD | Run before tool call |
-| `@McpPostHook` | METHOD | Run after tool call |
+| `@McpPreHook` | METHOD | Run before tool call (params: `toolName`, `order`) |
+| `@McpPostHook` | METHOD | Run after tool call (params: `toolName`, `order`) |
 | `@McpBash` | TYPE | Enable bash/shell command execution tool |
-| `@McpTelemetry` | TYPE | Enable metrics and tracing |
+| `@McpTelemetry` | TYPE | Enable metrics and tracing (params: `enabled`, `exportConsole`, `exportOtlp`, `sampleRate`) |
 | `@McpMemory` | TYPE | Enable memory tools |
 | `@McpTodo` | TYPE | Enable todo/task management tools |
 | `@McpPlanner` | TYPE | Enable planning tools |
@@ -297,11 +297,11 @@ public String createTask(
 
 Two hook types supported:
 
-**@McpPreHook** — Runs before any tool is called.
+**@McpPreHook** — Runs before tool is called. Receives `Map<String, Object> arguments`.
 
-**@McpPostHook** — Runs after any tool completes.
+**@McpPostHook** — Runs after tool completes. Receives `Map<String, Object> arguments, Object result`.
 
-Use for logging, validation, metrics, audit trails.
+Use for logging, validation, authentication, audit trails, metrics.
 
 ```java
 @McpServer(name = "MyServer", version = "1.0")
@@ -312,14 +312,17 @@ public class MyServer {
         return x + y;
     }
 
-    @McpPreHook
-    void logBefore(ToolContext ctx) {
-        System.out.println("Starting: " + ctx.getToolName());
+    // Run before ALL tools (*)
+    @McpPreHook(toolName = "*", order = 1)
+    void authenticate(Map<String, Object> args) {
+        String token = (String) args.get("token");
+        if (!isValid(token)) throw new SecurityException("Unauthorized");
     }
 
-    @McpPostHook
-    void logAfter(ToolContext ctx) {
-        System.out.println("Finished: " + ctx.getToolName());
+    // Run after specific tool only
+    @McpPostHook(toolName = "calculate", order = 1)
+    void logResult(Map<String, Object> args, Object result) {
+        System.out.println("Result: " + result);
     }
 
     public static void main(String[] args) {
@@ -328,10 +331,13 @@ public class MyServer {
 }
 ```
 
-**Context** (same type used by @McpContext, @McpPreHook, @McpPostHook):
-- `getToolName()` — Name of the tool being called
-- `getArguments()` — Arguments passed to the tool
-- `getStartTime()` — When the tool started
+**Hook options:**
+- `toolName` — Target specific tool name, or `"*"` for all tools. Empty = inferred from method name
+- `order` — Execution priority (lower = first). Default: `0`
+
+**Hook parameters:**
+- Pre-hook: `Map<String, Object> arguments` — Tool input arguments
+- Post-hook: `Map<String, Object> arguments, Object result` — Input + output
 
 ---
 
