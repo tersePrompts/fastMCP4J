@@ -46,7 +46,7 @@ jobs:
       - name: 🚀 Start Streamable server
         run: |
           mvn -q exec:java \
-            -Dexec.mainClass=com.ultrathink.fastmcp.example.SimpleStreamableServer \
+            -Dexec.mainClass=io.github.terseprompts.fastmcp.example.SimpleStreamableServer \
             -Dexec.classpathScope=test \
             > server.log 2>&1 &
           echo "SERVER_PID=$!" >> $GITHUB_ENV

@@ -46,7 +46,7 @@ jobs:
       - name: 🚀 Start SSE server
         run: |
           mvn -q exec:java \
-            -Dexec.mainClass=com.ultrathink.fastmcp.example.SimpleSseServer \
+            -Dexec.mainClass=io.github.terseprompts.fastmcp.example.SimpleSseServer \
             -Dexec.classpathScope=test \
             > server.log 2>&1 &
           echo "SERVER_PID=$!" >> $GITHUB_ENV
