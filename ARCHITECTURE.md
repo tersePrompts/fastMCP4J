@@ -209,7 +209,7 @@ sequenceDiagram
 ## Package Structure
 
 ```
-com.ultrathink.fastmcp/
+io.github.terseprompts.fastmcp/
 ├── annotations/      # Runtime annotations for user code
 ├── model/           # Immutable metadata classes
 ├── scanner/         # Annotation scanning and validation

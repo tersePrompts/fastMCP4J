@@ -29,7 +29,7 @@ python python-tests/test_stdio_quick.py
 ### SSE Test (server must be running on port 3001)
 ```bash
 # Terminal 1: Start server
-mvn exec:java -Dexec.mainClass=com.ultrathink.fastmcp.example.SimpleSseServer -Dexec.classpathScope=test
+mvn exec:java -Dexec.mainClass=io.github.terseprompts.fastmcp.example.SimpleSseServer -Dexec.classpathScope=test
 
 # Terminal 2: Run test
 python python-tests/test_sse_quick.py
@@ -38,7 +38,7 @@ python python-tests/test_sse_quick.py
 ### Streamable Test (server must be running on port 3002)
 ```bash
 # Terminal 1: Start server
-mvn exec:java -Dexec.mainClass=com.ultrathink.fastmcp.example.SimpleStreamableServer -Dexec.classpathScope=test
+mvn exec:java -Dexec.mainClass=io.github.terseprompts.fastmcp.example.SimpleStreamableServer -Dexec.classpathScope=test
 
 # Terminal 2: Run test
 python python-tests/test_streamable_quick.py

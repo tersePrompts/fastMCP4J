@@ -96,13 +96,13 @@ python test_stdio.py
 
 ```bash
 # Streamable HTTP
-mvn -q exec:java -Dexec.mainClass=com.ultrathink.fastmcp.example.EchoServer -Dexec.classpathScope=test
+mvn -q exec:java -Dexec.mainClass=io.github.terseprompts.fastmcp.example.EchoServer -Dexec.classpathScope=test
 
 # SSE
-mvn -q exec:java -Dexec.mainClass=com.ultrathink.fastmcp.example.SseFullServer -Dexec.classpathScope=test
+mvn -q exec:java -Dexec.mainClass=io.github.terseprompts.fastmcp.example.SseFullServer -Dexec.classpathScope=test
 
 # STDIO
-mvn -q exec:java -Dexec.mainClass=com.ultrathink.fastmcp.example.StdioFullServer -Dexec.classpathScope=test
+mvn -q exec:java -Dexec.mainClass=io.github.terseprompts.fastmcp.example.StdioFullServer -Dexec.classpathScope=test
 ```
 
 ## Conclusion

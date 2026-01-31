@@ -341,7 +341,7 @@ async def run_tests(transport_type):
             server_params = StdioServerParameters(
                 command="mvn",
                 args=["-q", "exec:java",
-                      "-Dexec.mainClass=com.ultrathink.fastmcp.example.StdioFullServer",
+                      "-Dexec.mainClass=io.github.terseprompts.fastmcp.example.StdioFullServer",
                       "-Dexec.classpathScope=test"],
             )
             async with stdio_client(server_params) as (read, write):

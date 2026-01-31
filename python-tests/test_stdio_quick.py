@@ -15,7 +15,7 @@ from mcp.client.stdio import stdio_client
 
 
 # Configuration
-SERVER_CLASS: str = "com.ultrathink.fastmcp.example.StdioFullServer"
+SERVER_CLASS: str = "io.github.terseprompts.fastmcp.example.StdioFullServer"
 
 
 def log_section(title: str) -> None:
