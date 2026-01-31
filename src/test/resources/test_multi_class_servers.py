@@ -67,7 +67,7 @@ def test_manual_modules_server():
 
     # Find and run the server
     cmd = [sys.executable if sys.platform != "win32" else "python",
-           "-m", "pytest", "src/test/java/com/ultrathink/fastmcp/example/ManualModulesServer.java"]
+           "-m", "pytest", "src/test/java/io/github/terseprompts/fastmcp/example/ManualModulesServer.java"]
 
     # Actually, we need to run via Maven
     process = subprocess.Popen(
