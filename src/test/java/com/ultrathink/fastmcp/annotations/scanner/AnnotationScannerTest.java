@@ -1,4 +1,4 @@
-package com.ultrathink.fastmcp.scanner;
+package com.ultrathink.fastmcp.annotations.scanner;
 
 import com.ultrathink.fastmcp.annotations.McpPrompt;
 import com.ultrathink.fastmcp.annotations.McpResource;

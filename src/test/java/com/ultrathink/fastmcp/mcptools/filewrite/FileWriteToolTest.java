@@ -1,4 +1,4 @@
-package com.ultrathink.fastmcp.filewrite;
+package com.ultrathink.fastmcp.mcptools.filewrite;
 
 import com.ultrathink.fastmcp.mcptools.filewrite.FileWriteException;
 import com.ultrathink.fastmcp.mcptools.filewrite.FileWriteResult;

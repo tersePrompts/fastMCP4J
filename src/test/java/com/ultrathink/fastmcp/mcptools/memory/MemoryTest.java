@@ -1,4 +1,4 @@
-package com.ultrathink.fastmcp.memory;
+package com.ultrathink.fastmcp.mcptools.memory;
 
 import com.ultrathink.fastmcp.mcptools.memory.InMemoryMemoryStore;
 import com.ultrathink.fastmcp.mcptools.memory.MemoryException;
