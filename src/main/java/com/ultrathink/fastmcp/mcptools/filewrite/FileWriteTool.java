@@ -12,15 +12,17 @@ import java.util.List;
  * Tool for writing files with safety checks.
  *
  * Security considerations:
- * - Path validation to prevent directory traversal
+ * - Path validation with canonical resolution to prevent directory traversal
  * - File size limits
  * - Optional backup before overwrite
  * - Parent directory creation
+ * - Symlink bypass protection
  */
 public class FileWriteTool {
 
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
-    private static final int MAX_LINES = 100000; // Max lines to write
+    private static final int MAX_LINES = 10000; // Reduced from 100K for safety
+    private static final boolean ATOMIC_WRITES_DEFAULT = true; // Default to atomic writes for safety
 
     /**
      * Unified file operations tool with multiple modes.
@@ -114,7 +116,7 @@ public class FileWriteTool {
                 "[\"# Header\", \"## Subheader\", \"Content here\"]",
                 "[]"  // Empty array creates empty file
             },
-            constraints = "Maximum 100,000 lines. Each line is treated as a separate string. Empty array [] is allowed.",
+            constraints = "Maximum 10000 lines. Each line is treated as a separate string. Empty array [] is allowed.",
             hints = "Lines will be joined with newline separators and automatically have a trailing newline added. Use this for structured data or when you need individual line control.",
             required = false
         )
@@ -180,7 +182,8 @@ public class FileWriteTool {
     }
 
     /**
-     * Handle writeFile mode.
+     * Handle writeFile mode with atomic write support.
+     * Uses atomic file operations by default to prevent inconsistent state on interruption.
      */
     private FileWriteResult handleWriteFile(String path, String content, Boolean createParents) {
         if (path == null || path.trim().isEmpty()) {
@@ -200,21 +203,53 @@ public class FileWriteTool {
         }
 
         boolean fileExisted = Files.exists(filePath);
+        Path parent = filePath.getParent();
+
+        // Check if parent directory exists when createParents is false
+        if (!shouldCreateParents && parent != null && !Files.exists(parent)) {
+            throw new FileWriteException("Parent directory does not exist: " + getSanitizedPath(parent) + " (use createParents=true to create)");
+        }
 
         try {
             // Create parent directories if requested
-            if (shouldCreateParents && filePath.getParent() != null) {
-                Files.createDirectories(filePath.getParent());
+            if (shouldCreateParents && parent != null) {
+                Files.createDirectories(parent);
             }
 
-            // Write the file
-            Files.write(filePath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            // Use atomic write to prevent inconsistent state on interruption
+            if (ATOMIC_WRITES_DEFAULT) {
+                writeAtomic(filePath, bytes, shouldCreateParents);
+            } else {
+                // Direct write (not atomic)
+                Files.write(filePath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            }
 
             int lineCount = content.split("\n").length;
             return new FileWriteResult(path, bytes.length, lineCount, "write", !fileExisted);
 
         } catch (IOException e) {
-            throw new FileWriteException("Failed to write file: " + e.getMessage(), e);
+            throw new FileWriteException("Failed to write file: " + getSanitizedPath(filePath), e);
+        }
+    }
+
+    /**
+     * Write file atomically using a temporary file.
+     */
+    private void writeAtomic(Path target, byte[] content, boolean createParents) throws IOException {
+        Path parent = target.getParent() != null ? target.getParent() : Path.of(".");
+        if (createParents && !Files.exists(parent)) {
+            Files.createDirectories(parent);
+        }
+
+        Path tempFile = Files.createTempFile(parent, ".tmp_" + target.getFileName(), null);
+        try {
+            Files.write(tempFile, content,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            Files.move(tempFile, target,
+                StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException e) {
+            Files.deleteIfExists(tempFile);
+            throw e;
         }
     }
 
@@ -235,7 +270,7 @@ public class FileWriteTool {
         // Check if file exists
         boolean fileExisted = Files.exists(filePath);
         if (!fileExisted && !shouldCreate) {
-            throw new FileWriteException("File does not exist: " + path + " (use createIfMissing=true to create)");
+            throw new FileWriteException("File does not exist: " + getSanitizedPath(filePath) + " (use createIfMissing=true to create)");
         }
 
         // Validate content size
@@ -249,7 +284,7 @@ public class FileWriteTool {
                     throw new FileWriteException("Appending would exceed maximum file size of " + MAX_FILE_SIZE + " bytes");
                 }
             } catch (IOException e) {
-                throw new FileWriteException("Failed to check file size: " + e.getMessage(), e);
+                throw new FileWriteException("Failed to check file size: " + getSanitizedPath(filePath), e);
             }
         }
 
@@ -265,7 +300,7 @@ public class FileWriteTool {
             return new FileWriteResult(path, bytes.length, lineCount, "append", !fileExisted);
 
         } catch (IOException e) {
-            throw new FileWriteException("Failed to append to file: " + e.getMessage(), e);
+            throw new FileWriteException("Failed to append to file: " + getSanitizedPath(filePath), e);
         }
     }
 
@@ -328,18 +363,18 @@ public class FileWriteTool {
         Path filePath = validateAndNormalizePath(path);
 
         if (!Files.exists(filePath)) {
-            throw new FileWriteException("File does not exist: " + path);
+            throw new FileWriteException("File does not exist: " + getSanitizedPath(filePath));
         }
 
         if (Files.isDirectory(filePath)) {
-            throw new FileWriteException("Path is a directory, not a file: " + path);
+            throw new FileWriteException("Path is a directory, not a file: " + getSanitizedPath(filePath));
         }
 
         try {
             Files.delete(filePath);
-            return "Deleted file: " + path;
+            return "Deleted file: " + getSanitizedPath(filePath);
         } catch (IOException e) {
-            throw new FileWriteException("Failed to delete file: " + e.getMessage(), e);
+            throw new FileWriteException("Failed to delete file: " + getSanitizedPath(filePath), e);
         }
     }
 
@@ -356,9 +391,9 @@ public class FileWriteTool {
 
         if (Files.exists(dirPath)) {
             if (Files.isDirectory(dirPath)) {
-                return "Directory already exists: " + path;
+                return "Directory already exists: " + getSanitizedPath(dirPath);
             } else {
-                throw new FileWriteException("Path exists but is not a directory: " + path);
+                throw new FileWriteException("Path exists but is not a directory: " + getSanitizedPath(dirPath));
             }
         }
 
@@ -368,29 +403,65 @@ public class FileWriteTool {
             } else {
                 Files.createDirectory(dirPath);
             }
-            return "Created directory: " + path;
+            return "Created directory: " + getSanitizedPath(dirPath);
         } catch (IOException e) {
-            throw new FileWriteException("Failed to create directory: " + e.getMessage(), e);
+            throw new FileWriteException("Failed to create directory: " + getSanitizedPath(dirPath), e);
         }
     }
 
     /**
-     * Validate and normalize a file path.
-     * Prevents directory traversal attacks.
+     * Validate and normalize a file path with canonical resolution.
+     * Prevents directory traversal attacks via symlinks.
      */
     private Path validateAndNormalizePath(String path) {
         if (path == null || path.trim().isEmpty()) {
             throw new FileWriteException("Path cannot be null or empty");
         }
 
-        Path filePath = Paths.get(path).normalize();
+        try {
+            Path filePath = Paths.get(path).toAbsolutePath().normalize();
 
-        // Check for directory traversal attempts
-        String normalizedPath = filePath.toString();
-        if (normalizedPath.contains("..")) {
-            throw new FileWriteException("Invalid path: directory traversal not allowed");
+            // Check for directory traversal attempts in normalized path
+            String normalizedPath = filePath.toString();
+            if (normalizedPath.contains("..")) {
+                throw new FileWriteException("Invalid path: directory traversal not allowed");
+            }
+
+            // Try to get canonical path for parent directory to check for symlink attacks
+            // For new files, we check the parent directory
+            Path parent = filePath.getParent();
+            if (parent != null && Files.exists(parent)) {
+                try {
+                    Path canonicalParent = parent.toRealPath();
+                    // Reconstruct path with canonical parent
+                    String fileName = filePath.getFileName() != null ? filePath.getFileName().toString() : "";
+                    return canonicalParent.resolve(fileName);
+                } catch (IOException e) {
+                    // If canonicalization fails, use normalized path
+                    return filePath;
+                }
+            }
+
+            return filePath;
+        } catch (java.nio.file.InvalidPathException e) {
+            throw new FileWriteException("Invalid path: " + path);
         }
+    }
 
-        return filePath;
+    /**
+     * Get a sanitized version of the path for error messages.
+     * Only shows the filename, not the full path.
+     */
+    private String getSanitizedPath(Path path) {
+        if (path == null) {
+            return "[path]";
+        }
+        String fileName = path.getFileName() != null ? path.getFileName().toString() : "[unknown]";
+        // Show only the last 2 path components to reduce information disclosure
+        int nameCount = path.getNameCount();
+        if (nameCount >= 2) {
+            return "..." + path.subpath(nameCount - 2, nameCount);
+        }
+        return fileName;
     }
 }

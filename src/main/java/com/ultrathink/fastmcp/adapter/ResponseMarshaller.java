@@ -1,14 +1,26 @@
 package com.ultrathink.fastmcp.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 
 import com.ultrathink.fastmcp.exception.FastMcpException;
+import com.ultrathink.fastmcp.json.ObjectMapperFactory;
 import io.modelcontextprotocol.spec.McpSchema;
 
-/** Converts method return values to MCP CallToolResult. */
+/**
+ * Converts method return values to MCP CallToolResult with security hardening.
+ */
 public class ResponseMarshaller {
+
+    private final ObjectMapper mapper;
+
+    public ResponseMarshaller() {
+        this.mapper = ObjectMapperFactory.getShared();
+    }
+
+    public ResponseMarshaller(ObjectMapper customMapper) {
+        this.mapper = customMapper != null ? customMapper : ObjectMapperFactory.getShared();
+    }
 
     public McpSchema.CallToolResult marshal(Object value) {
         if (value == null) return emptyResult();
@@ -21,8 +33,6 @@ public class ResponseMarshaller {
         } else if (value instanceof Boolean b) {
             text = b.toString();
         } else {
-            ObjectMapper mapper = new ObjectMapper()
-                .setSerializationInclusion(JsonInclude.Include.NON_NULL);
             try {
                 text = mapper.writeValueAsString(value);
             } catch (Exception e) {

@@ -1,4 +1,4 @@
-package com.ultrathink.fastmcp.planner;
+package com.ultrathink.fastmcp.mcptools.planner;
 
 import com.ultrathink.fastmcp.mcptools.planner.InMemoryPlanStore;
 import com.ultrathink.fastmcp.mcptools.planner.PlanStore;

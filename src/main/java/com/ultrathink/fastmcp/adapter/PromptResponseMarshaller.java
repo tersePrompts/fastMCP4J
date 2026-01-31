@@ -1,19 +1,24 @@
 package com.ultrathink.fastmcp.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.ultrathink.fastmcp.exception.FastMcpException;
+import com.ultrathink.fastmcp.json.ObjectMapperFactory;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 
 /**
- * Converts method return values to MCP GetPromptResult.
- * Handles different return types: String, PromptMessage, List&lt;PromptMessage&gt;, and objects.
- * String → single user message with text content. Objects → JSON serialized in user message.
+ * Converts method return values to MCP GetPromptResult with security hardening.
  */
 public class PromptResponseMarshaller {
-    private final ObjectMapper mapper = new ObjectMapper()
-            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+    private final ObjectMapper mapper;
+
+    public PromptResponseMarshaller() {
+        this.mapper = ObjectMapperFactory.getShared();
+    }
+
+    public PromptResponseMarshaller(ObjectMapper customMapper) {
+        this.mapper = customMapper != null ? customMapper : ObjectMapperFactory.getShared();
+    }
 
     public McpSchema.GetPromptResult marshal(Object value) {
         if (value == null) return emptyResult();
@@ -60,7 +65,7 @@ public class PromptResponseMarshaller {
         }
 
         Object first = list.get(0);
-        
+
         // If list of PromptMessage, use directly
         if (first instanceof McpSchema.PromptMessage) {
             return new McpSchema.GetPromptResult(
@@ -68,7 +73,7 @@ public class PromptResponseMarshaller {
                 (List<McpSchema.PromptMessage>) list
             );
         }
-        
+
         // If list of strings, create user messages for each
         if (first instanceof String) {
             List<McpSchema.PromptMessage> messages = ((List<String>) list).stream()
@@ -77,13 +82,13 @@ public class PromptResponseMarshaller {
                     new McpSchema.TextContent(text)
                 ))
                 .toList();
-            
+
             return new McpSchema.GetPromptResult(
                 "Generated prompt",
                 messages
             );
         }
-        
+
         // Otherwise serialize the entire list as JSON in a single message
         try {
             String json = mapper.writeValueAsString(list);

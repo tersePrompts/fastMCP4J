@@ -1,19 +1,24 @@
 package com.ultrathink.fastmcp.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.ultrathink.fastmcp.exception.FastMcpException;
+import com.ultrathink.fastmcp.json.ObjectMapperFactory;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 
 /**
- * Converts method return values to MCP ReadResourceResult.
- * Handles different return types: String, byte[], objects, and collections.
- * String/byte[] → direct text/blob content. Objects → JSON serialized.
+ * Converts method return values to MCP ReadResourceResult with security hardening.
  */
 public class ResourceResponseMarshaller {
-    private final ObjectMapper mapper = new ObjectMapper()
-            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+    private final ObjectMapper mapper;
+
+    public ResourceResponseMarshaller() {
+        this.mapper = ObjectMapperFactory.getShared();
+    }
+
+    public ResourceResponseMarshaller(ObjectMapper customMapper) {
+        this.mapper = customMapper != null ? customMapper : ObjectMapperFactory.getShared();
+    }
 
     public McpSchema.ReadResourceResult marshal(Object value) {
         if (value == null) return emptyResult();
@@ -40,8 +45,8 @@ public class ResourceResponseMarshaller {
         // Use BlobResourceContents with base64 encoded text for now
         return new McpSchema.ReadResourceResult(List.of(
             new McpSchema.BlobResourceContents(
-                "text/plain", 
-                null, 
+                "text/plain",
+                null,
                 java.util.Base64.getEncoder().encodeToString(text.getBytes())
             )
         ));
@@ -50,8 +55,8 @@ public class ResourceResponseMarshaller {
     private McpSchema.ReadResourceResult blobResult(byte[] bytes) {
         return new McpSchema.ReadResourceResult(List.of(
             (McpSchema.ResourceContents) new McpSchema.BlobResourceContents(
-                "application/octet-stream", 
-                null, 
+                "application/octet-stream",
+                null,
                 java.util.Base64.getEncoder().encodeToString(bytes)
             )
         ));
@@ -64,26 +69,26 @@ public class ResourceResponseMarshaller {
         }
 
         Object first = list.get(0);
-        
+
         // If list of strings, join them
         if (first instanceof String) {
             return textResult(String.join("\n", (List<String>) list));
         }
-        
+
             // If list of byte arrays, treat as multiple blob contents
         if (first instanceof byte[]) {
             List<McpSchema.ResourceContents> blobContents = list.stream()
                 .map(item -> (byte[]) item)
                 .map(bytes -> (McpSchema.ResourceContents) new McpSchema.BlobResourceContents(
-                    "application/octet-stream", 
-                    null, 
+                    "application/octet-stream",
+                    null,
                     java.util.Base64.getEncoder().encodeToString(bytes)
                 ))
                 .toList();
-            
+
             return new McpSchema.ReadResourceResult(blobContents);
         }
-        
+
         // Otherwise serialize the entire list as JSON
         try {
             String json = mapper.writeValueAsString(list);

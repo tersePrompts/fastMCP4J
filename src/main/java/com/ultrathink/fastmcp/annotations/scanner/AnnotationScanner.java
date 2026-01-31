@@ -7,10 +7,10 @@ import com.ultrathink.fastmcp.model.PromptMeta;
 import com.ultrathink.fastmcp.model.ResourceMeta;
 import com.ultrathink.fastmcp.model.ServerMeta;
 import com.ultrathink.fastmcp.model.ToolMeta;
+import org.reflections.Reflections;
+
 import java.lang.reflect.Method;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class AnnotationScanner {
@@ -19,15 +19,86 @@ public class AnnotationScanner {
         validateServerClass(clazz);
         McpServer ann = clazz.getAnnotation(McpServer.class);
 
+        List<ToolMeta> tools = new ArrayList<>();
+        List<ResourceMeta> resources = new ArrayList<>();
+        List<PromptMeta> prompts = new ArrayList<>();
+
+        // 1. Scan the main server class
+        tools.addAll(scanTools(clazz));
+        resources.addAll(scanResources(clazz));
+        prompts.addAll(scanPrompts(clazz));
+
+        // 2. Scan explicit module classes (fast, explicit)
+        for (Class<?> moduleClass : ann.modules()) {
+            tools.addAll(scanTools(moduleClass));
+            resources.addAll(scanResources(moduleClass));
+            prompts.addAll(scanPrompts(moduleClass));
+        }
+
+        // 3. Scan base package if specified (convenient, auto-discovers)
+        if (!ann.scanBasePackage().isEmpty()) {
+            scanPackageForTools(ann.scanBasePackage(), tools, resources, prompts);
+        }
+
         return new ServerMeta(
             ann.name(),
             ann.version(),
             ann.instructions(),
-            scanTools(clazz),
-            scanResources(clazz),
-            scanPrompts(clazz),
+            tools,
+            resources,
+            prompts,
             parseIcons(ann.icons())
         );
+    }
+
+    /**
+     * Scan all classes in a package for MCP annotations.
+     */
+    private void scanPackageForTools(String basePackage, List<ToolMeta> tools,
+                                      List<ResourceMeta> resources, List<PromptMeta> prompts) {
+        // Validate package name to prevent path traversal
+        if (!isValidPackageName(basePackage)) {
+            throw new ValidationException("Invalid package name: " + basePackage);
+        }
+
+        Reflections reflections = new Reflections(basePackage);
+        Set<Class<?>> classes = reflections.getSubTypesOf(Object.class);
+
+        for (Class<?> clazz : classes) {
+            // Skip non-public classes and inner classes
+            if (!java.lang.reflect.Modifier.isPublic(clazz.getModifiers()) ||
+                clazz.isMemberClass() || clazz.isAnonymousClass() || clazz.isLocalClass()) {
+                continue;
+            }
+
+            // Skip the server class itself
+            if (clazz.isAnnotationPresent(McpServer.class)) {
+                continue;
+            }
+
+            tools.addAll(scanTools(clazz));
+            resources.addAll(scanResources(clazz));
+            prompts.addAll(scanPrompts(clazz));
+        }
+    }
+
+    /**
+     * Validate that a package name is safe to scan.
+     * Prevents path traversal and injection attacks.
+     */
+    private boolean isValidPackageName(String packageName) {
+        if (packageName == null || packageName.isEmpty()) {
+            return false;
+        }
+
+        // Check for path traversal patterns
+        if (packageName.contains("..") || packageName.contains("/") ||
+            packageName.contains("\\") || packageName.startsWith(".")) {
+            return false;
+        }
+
+        // Must be a valid Java package name (dots and identifiers)
+        return packageName.matches("^[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*$");
     }
 
     /**

@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ultrathink.fastmcp.json.ObjectMapperFactory;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import reactor.core.publisher.Mono;
@@ -23,7 +24,7 @@ import reactor.core.publisher.Mono;
  */
 public class MemoryTool {
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = ObjectMapperFactory.getShared();
 
     private final MemoryStore store;
     private final String rootPath;

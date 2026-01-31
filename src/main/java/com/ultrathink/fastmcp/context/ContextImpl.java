@@ -12,18 +12,33 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 public class ContextImpl implements Context {
-    
+
     private final RequestContext exchange;
     private final String serverName;
     private final Map<String, Object> sessionState;
     private final NotificationHelper notificationHelper;
-    
+
     public ContextImpl(RequestContext exchange, String serverName,
                      Map<String, Object> sessionState, NotificationHelper notificationHelper) {
         this.exchange = exchange;
         this.serverName = serverName;
         this.sessionState = sessionState;
         this.notificationHelper = notificationHelper;
+    }
+
+    @Override
+    public String getTenantId() {
+        return "default";
+    }
+
+    @Override
+    public String getUserId() {
+        return null;
+    }
+
+    @Override
+    public String getNamespace() {
+        return "default";
     }
     
     @Override
@@ -171,7 +186,7 @@ public class ContextImpl implements Context {
         private final String sessionId;
         private final String transport;
         private final Map<String, Object> meta;
-        
+
         public RequestContext(String requestId, String clientId, String sessionId,
                          String transport, Map<String, Object> meta) {
             this.requestId = requestId;
@@ -180,7 +195,7 @@ public class ContextImpl implements Context {
             this.transport = transport;
             this.meta = meta != null ? meta : new HashMap<>();
         }
-        
+
         public String getRequestId() { return requestId; }
         public String getClientId() { return clientId; }
         public String getSessionId() { return sessionId; }
@@ -205,41 +220,36 @@ public class ContextImpl implements Context {
             return result;
         }
     }
-    
-    /**
-     * ThreadLocal storage for current context.
-     * Allows accessing context from deeply nested code without parameter passing.
-     */
+
+    /** ThreadLocal storage for current context. */
     private static final ThreadLocal<Context> CURRENT_CONTEXT = new ThreadLocal<>();
-    
-    /**
-     * Set the current context for this thread.
-     * Called by the framework during request processing.
-     */
+
+    /** Set the current context for this thread. Warns if context was already set. */
     public static void setCurrentContext(Context context) {
+        if (CURRENT_CONTEXT.get() != null) log.warn("Context leak: overwriting existing context");
         CURRENT_CONTEXT.set(context);
     }
-    
-    /**
-     * Get the current context for this thread.
-     * @return Current context, or null if no request is active
-     * @throws IllegalStateException if called outside of a request
-     */
+
+    /** Get current context or throw if none set. */
     public static Context getCurrentContext() {
         Context ctx = CURRENT_CONTEXT.get();
-        if (ctx == null) {
-            throw new IllegalStateException("No active MCP request context. " +
-                "getCurrentContext() can only be called within a request.");
-        }
+        if (ctx == null) throw new IllegalStateException("No active MCP request context");
         return ctx;
     }
-    
-    /**
-     * Clear the current context for this thread.
-     * Called after request processing completes.
-     */
+
+    /** Get current context or null if none set. */
+    public static Context getCurrentContextOrNull() {
+        return CURRENT_CONTEXT.get();
+    }
+
+    /** Clear the current context for this thread. Idempotent. */
     public static void clearCurrentContext() {
         CURRENT_CONTEXT.remove();
+    }
+
+    /** Check if a context is currently set. */
+    public static boolean hasContext() {
+        return CURRENT_CONTEXT.get() != null;
     }
     
     /**

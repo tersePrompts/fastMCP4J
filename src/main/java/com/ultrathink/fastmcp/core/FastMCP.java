@@ -2,12 +2,17 @@ package com.ultrathink.fastmcp.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ultrathink.fastmcp.adapter.*;
+import com.ultrathink.fastmcp.json.ObjectMapperFactory;
 import com.ultrathink.fastmcp.annotations.McpMemory;
 import com.ultrathink.fastmcp.annotations.McpTodo;
 import com.ultrathink.fastmcp.annotations.McpPlanner;
+import com.ultrathink.fastmcp.annotations.McpBash;
 import com.ultrathink.fastmcp.annotations.McpFileRead;
 import com.ultrathink.fastmcp.annotations.McpFileWrite;
+import com.ultrathink.fastmcp.annotations.McpTelemetry;
 import com.ultrathink.fastmcp.hook.HookManager;
+import com.ultrathink.fastmcp.telemetry.TelemetryService;
+import com.ultrathink.fastmcp.mcptools.bash.BashTool;
 import com.ultrathink.fastmcp.mcptools.fileread.FileReadTool;
 import com.ultrathink.fastmcp.mcptools.filewrite.FileWriteTool;
 import com.ultrathink.fastmcp.mcptools.memory.InMemoryMemoryStore;
@@ -33,10 +38,13 @@ import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.*;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.*;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.servlet.*;
 import reactor.core.publisher.Mono;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.BiFunction;
@@ -92,6 +100,9 @@ public final class FastMCP {
     private MemoryStore memoryStore;
     private TodoStore todoStore;
     private PlanStore planStore;
+
+    // Telemetry service (created from @McpTelemetry annotation)
+    private TelemetryService telemetry;
 
     // Server capabilities configuration
     private Consumer<ServerCapabilitiesBuilder> capabilitiesConfigurer = caps -> {
@@ -290,6 +301,7 @@ public final class FastMCP {
             McpAsyncServer mcp = build();
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 mcp.closeGracefully().block(Duration.ofSeconds(10));
+                if (telemetry != null) telemetry.close();
                 if (jetty != null) try { jetty.stop(); } catch (Exception ignored) {}
             }));
 
@@ -310,8 +322,14 @@ public final class FastMCP {
             ServerMeta meta = scanner.scan(serverClass);
             serverName = meta.getName();
 
+            // Create telemetry service if @McpTelemetry annotation is present
+            McpTelemetry telemetryAnn = serverClass.getAnnotation(McpTelemetry.class);
+            if (telemetryAnn != null && telemetryAnn.enabled()) {
+                this.telemetry = TelemetryService.create(serverName, telemetryAnn);
+            }
+
             HookManager hookManager = new HookManager(instance, meta.getTools());
-            var mapper = new JacksonMcpJsonMapper(new ObjectMapper());
+            var mapper = new JacksonMcpJsonMapper(ObjectMapperFactory.createNew());
 
             Object builder = createBuilder(mapper);
             configureServerInfo(builder, meta);
@@ -487,6 +505,16 @@ public final class FastMCP {
                 }
             }
 
+            if (serverClass.isAnnotationPresent(McpBash.class)) {
+                McpBash bashAnn = serverClass.getAnnotation(McpBash.class);
+                BashTool bashTool = new BashTool(
+                    bashAnn.timeout(),
+                    bashAnn.visibleAfterBasePath(),
+                    List.of(bashAnn.notAllowedPaths())
+                );
+                specs.add(buildBuiltinTool(bashTool, "bash", bashTool.getToolDescription()));
+            }
+
             if (!specs.isEmpty()) {
                 toolsMethod.invoke(builder, (Object) specs.toArray(McpServerFeatures.AsyncToolSpecification[]::new));
             }
@@ -501,6 +529,12 @@ public final class FastMCP {
         ServletHolder holder = new ServletHolder(servlet);
         holder.setAsyncSupported(true);
         ctx.addServlet(holder, mcpUri + "/*");
+
+        // Add security headers filter
+        FilterHolder securityFilter = new FilterHolder(new SecurityHeadersFilter());
+        securityFilter.setAsyncSupported(true);
+        ctx.addFilter(securityFilter, "/*", java.util.EnumSet.of(jakarta.servlet.DispatcherType.REQUEST));
+
         jetty.setHandler(ctx);
         jetty.start();
     }
@@ -513,6 +547,12 @@ public final class FastMCP {
         // SSE requires two endpoints: /sse for GET (SSE connection) and /mcp for POST (messages)
         ctx.addServlet(holder, "/sse/*");
         ctx.addServlet(holder, mcpUri + "/*");
+
+        // Add security headers filter
+        FilterHolder securityFilter = new FilterHolder(new SecurityHeadersFilter());
+        securityFilter.setAsyncSupported(true);
+        ctx.addFilter(securityFilter, "/*", java.util.EnumSet.of(jakarta.servlet.DispatcherType.REQUEST));
+
         jetty.setHandler(ctx);
         jetty.start();
     }
@@ -535,7 +575,7 @@ public final class FastMCP {
                 .build();
 
         var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(),
-            new ResponseMarshaller(), serverName, hookManager);
+            new ResponseMarshaller(), serverName, hookManager, telemetry);
         return new McpServerFeatures.AsyncToolSpecification(tool, null, handler.asHandler());
     }
 
@@ -636,12 +676,57 @@ public final class FastMCP {
         TRANSPORT_CONTEXT.remove();
     }
 
+    /**
+     * Get the telemetry service for the current server (if enabled).
+     * Can be used for manual instrumentation.
+     */
+    public TelemetryService getTelemetry() {
+        return telemetry;
+    }
+
     @SuppressWarnings("unchecked")
     private Object parseJsonSchema(String schema) {
         try {
-            return new ObjectMapper().readValue(schema, Map.class);
+            return ObjectMapperFactory.getShared().readValue(schema, Map.class);
         } catch (Exception e) {
             return Map.of();
+        }
+    }
+
+    // ========================================
+    // Security Headers Filter
+    // ========================================
+
+    /**
+     * Filter that adds security headers to all HTTP responses.
+     */
+    private static class SecurityHeadersFilter implements Filter {
+        @Override
+        public void init(FilterConfig filterConfig) throws ServletException {
+            // No initialization needed
+        }
+
+        @Override
+        public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+                throws IOException, ServletException {
+            if (response instanceof HttpServletResponse httpResponse) {
+                // Prevent MIME type sniffing
+                httpResponse.setHeader("X-Content-Type-Options", "nosniff");
+                // Prevent clickjacking
+                httpResponse.setHeader("X-Frame-Options", "DENY");
+                // Enable browser XSS filtering
+                httpResponse.setHeader("X-XSS-Protection", "1; mode=block");
+                // Restrict referrer information
+                httpResponse.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+                // Content Security Policy (basic)
+                httpResponse.setHeader("Content-Security-Policy", "default-src 'self'");
+            }
+            chain.doFilter(request, response);
+        }
+
+        @Override
+        public void destroy() {
+            // No cleanup needed
         }
     }
 
