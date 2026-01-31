@@ -1,6 +1,5 @@
 package com.ultrathink.fastmcp.context;
 
-import com.ultrathink.fastmcp.agent.tenancy.TenantContext;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
@@ -18,7 +17,6 @@ public class ContextImpl implements Context {
     private final String serverName;
     private final Map<String, Object> sessionState;
     private final NotificationHelper notificationHelper;
-    private final TenantContext tenantContext; // NEW: Agent lifecycle support
 
     public ContextImpl(RequestContext exchange, String serverName,
                      Map<String, Object> sessionState, NotificationHelper notificationHelper) {
@@ -26,23 +24,21 @@ public class ContextImpl implements Context {
         this.serverName = serverName;
         this.sessionState = sessionState;
         this.notificationHelper = notificationHelper;
-        this.tenantContext = exchange.getTenantContext(); // NEW
     }
 
-    // NEW: Agent lifecycle - tenant support
     @Override
     public String getTenantId() {
-        return tenantContext != null ? tenantContext.getTenantId() : "default";
+        return "default";
     }
 
     @Override
     public String getUserId() {
-        return tenantContext != null ? tenantContext.getUserId() : null;
+        return null;
     }
 
     @Override
     public String getNamespace() {
-        return tenantContext != null ? tenantContext.getNamespace() : "default";
+        return "default";
     }
     
     @Override
@@ -190,21 +186,14 @@ public class ContextImpl implements Context {
         private final String sessionId;
         private final String transport;
         private final Map<String, Object> meta;
-        private final TenantContext tenantContext; // NEW: Agent lifecycle
 
         public RequestContext(String requestId, String clientId, String sessionId,
                          String transport, Map<String, Object> meta) {
-            this(requestId, clientId, sessionId, transport, meta, null);
-        }
-
-        public RequestContext(String requestId, String clientId, String sessionId,
-                         String transport, Map<String, Object> meta, TenantContext tenantContext) {
             this.requestId = requestId;
             this.clientId = clientId;
             this.sessionId = sessionId;
             this.transport = transport;
             this.meta = meta != null ? meta : new HashMap<>();
-            this.tenantContext = tenantContext;
         }
 
         public String getRequestId() { return requestId; }
@@ -212,7 +201,6 @@ public class ContextImpl implements Context {
         public String getSessionId() { return sessionId; }
         public String getTransport() { return transport; }
         public Map<String, Object> getMeta() { return meta; }
-        public TenantContext getTenantContext() { return tenantContext; }
 
         /** Get HTTP headers from the request (for HTTP transports) */
         @SuppressWarnings("unchecked")
