@@ -256,12 +256,10 @@ public class TelemetryService implements AutoCloseable {
             this.spanId = generateSpanId();
             this.parentSpanId = parentSpanId;
             this.startTime = Instant.now();
-            this.traceId = parentSpanId != null ? MDC.get("traceId") : generateTraceId();
-
-            // Fallback: generate new trace ID if MDC not set (e.g., in tests)
-            if (this.traceId == null) {
-                this.traceId = generateTraceId();
-            }
+            // For root spans, generate trace ID. For child spans, try to get from MDC,
+            // otherwise generate a new trace ID as fallback.
+            String traceIdFromMDC = parentSpanId != null ? MDC.get("traceId") : null;
+            this.traceId = traceIdFromMDC != null ? traceIdFromMDC : generateTraceId();
 
             // Set MDC for logging
             setTraceContext(traceId, spanId);
