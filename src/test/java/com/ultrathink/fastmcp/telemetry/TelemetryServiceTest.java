@@ -3,39 +3,60 @@ package com.ultrathink.fastmcp.telemetry;
 import com.ultrathink.fastmcp.annotations.McpTelemetry;
 import org.junit.jupiter.api.Test;
 
+import java.lang.annotation.Annotation;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class TelemetryServiceTest {
 
+    /**
+     * Create a mock McpTelemetry annotation for testing.
+     */
+    private McpTelemetry createMockAnnotation(
+            boolean enabled,
+            boolean exportConsole,
+            boolean exportOtlp,
+            String otlpEndpoint,
+            double sampleRate,
+            boolean includeArguments,
+            long metricExportIntervalMs
+    ) {
+        return new McpTelemetry() {
+            @Override
+            public boolean enabled() { return enabled; }
+
+            @Override
+            public boolean exportConsole() { return exportConsole; }
+
+            @Override
+            public boolean exportOtlp() { return exportOtlp; }
+
+            @Override
+            public String otlpEndpoint() { return otlpEndpoint; }
+
+            @Override
+            public double sampleRate() { return sampleRate; }
+
+            @Override
+            public boolean includeArguments() { return includeArguments; }
+
+            @Override
+            public long metricExportIntervalMs() { return metricExportIntervalMs; }
+
+            @Override
+            public Class<? extends Annotation> annotationType() {
+                return McpTelemetry.class;
+            }
+        };
+    }
+
     @Test
     void testCreateTelemetryServiceWithDefaults() {
-        McpTelemetry annotation = new McpTelemetry() {
-            @Override
-            public boolean enabled() { return true; }
-
-            @Override
-            public boolean exportConsole() { return true; }
-
-            @Override
-            public boolean exportOtlp() { return false; }
-
-            @Override
-            public String otlpEndpoint() { return "http://localhost:4317"; }
-
-            @Override
-            public double sampleRate() { return 1.0; }
-
-            @Override
-            public boolean includeArguments() { return false; }
-
-            @Override
-            public long metricExportIntervalMs() { return 60000; }
-
-            @Override
-            public Class<?> annotationType() { return McpTelemetry.class; }
-        };
+        McpTelemetry annotation = createMockAnnotation(
+                true, true, false, "http://localhost:4317",
+                1.0, false, 60000
+        );
 
         TelemetryService service = TelemetryService.create("TestServer", annotation);
         assertNotNull(service, "TelemetryService should be created");
@@ -44,35 +65,14 @@ class TelemetryServiceTest {
 
     @Test
     void testTelemetryDisabled() {
-        McpTelemetry annotation = new McpTelemetry() {
-            @Override
-            public boolean enabled() { return false; }
-
-            @Override
-            public boolean exportConsole() { return true; }
-
-            @Override
-            public boolean exportOtlp() { return false; }
-
-            @Override
-            public String otlpEndpoint() { return "http://localhost:4317"; }
-
-            @Override
-            public double sampleRate() { return 1.0; }
-
-            @Override
-            public boolean includeArguments() { return false; }
-
-            @Override
-            public long metricExportIntervalMs() { return 60000; }
-
-            @Override
-            public Class<?> annotationType() { return McpTelemetry.class; }
-        };
+        McpTelemetry annotation = createMockAnnotation(
+                false, true, false, "http://localhost:4317",
+                1.0, false, 60000
+        );
 
         TelemetryService service = TelemetryService.create("TestServer", annotation);
 
-        // When disabled, increment should be a no-op
+        // When disabled, operations should be no-ops
         service.increment("test.counter");
         service.record("test.histogram", 100);
         service.recordToolInvocation("testTool", Duration.ofMillis(100), true);
@@ -83,31 +83,10 @@ class TelemetryServiceTest {
 
     @Test
     void testRecordToolInvocation() {
-        McpTelemetry annotation = new McpTelemetry() {
-            @Override
-            public boolean enabled() { return true; }
-
-            @Override
-            public boolean exportConsole() { return false; } // Disable console output
-
-            @Override
-            public boolean exportOtlp() { return false; }
-
-            @Override
-            public String otlpEndpoint() { return "http://localhost:4317"; }
-
-            @Override
-            public double sampleRate() { return 1.0; }
-
-            @Override
-            public boolean includeArguments() { return false; }
-
-            @Override
-            public long metricExportIntervalMs() { return 60000; }
-
-            @Override
-            public Class<?> annotationType() { return McpTelemetry.class; }
-        };
+        McpTelemetry annotation = createMockAnnotation(
+                true, false, false, "http://localhost:4317",
+                1.0, false, 60000
+        );
 
         TelemetryService service = TelemetryService.create("TestServer", annotation);
 
@@ -117,36 +96,14 @@ class TelemetryServiceTest {
         service.recordToolInvocation("search", Duration.ofMillis(100), false);
 
         service.close();
-        // If no exception is thrown, test passes
     }
 
     @Test
-    void testSpanSampling() {
-        McpTelemetry annotation = new McpTelemetry() {
-            @Override
-            public boolean enabled() { return true; }
-
-            @Override
-            public boolean exportConsole() { return false; }
-
-            @Override
-            public boolean exportOtlp() { return false; }
-
-            @Override
-            public String otlpEndpoint() { return "http://localhost:4317"; }
-
-            @Override
-            public double sampleRate() { return 0.0; } // 0% sampling
-
-            @Override
-            public boolean includeArguments() { return false; }
-
-            @Override
-            public long metricExportIntervalMs() { return 60000; }
-
-            @Override
-            public Class<?> annotationType() { return McpTelemetry.class; }
-        };
+    void testSpanSampling_ZeroPercent() {
+        McpTelemetry annotation = createMockAnnotation(
+                true, false, false, "http://localhost:4317",
+                0.0, false, 60000
+        );
 
         TelemetryService service = TelemetryService.create("TestServer", annotation);
 
@@ -158,32 +115,11 @@ class TelemetryServiceTest {
     }
 
     @Test
-    void testSpanSamplingFull() {
-        McpTelemetry annotation = new McpTelemetry() {
-            @Override
-            public boolean enabled() { return true; }
-
-            @Override
-            public boolean exportConsole() { return false; }
-
-            @Override
-            public boolean exportOtlp() { return false; }
-
-            @Override
-            public String otlpEndpoint() { return "http://localhost:4317"; }
-
-            @Override
-            public double sampleRate() { return 1.0; } // 100% sampling
-
-            @Override
-            public boolean includeArguments() { return false; }
-
-            @Override
-            public long metricExportIntervalMs() { return 60000; }
-
-            @Override
-            public Class<?> annotationType() { return McpTelemetry.class; }
-        };
+    void testSpanSampling_HundredPercent() {
+        McpTelemetry annotation = createMockAnnotation(
+                true, false, false, "http://localhost:4317",
+                1.0, false, 60000
+        );
 
         TelemetryService service = TelemetryService.create("TestServer", annotation);
 
@@ -199,37 +135,15 @@ class TelemetryServiceTest {
 
     @Test
     void testSpanAutoCloseable() {
-        McpTelemetry annotation = new McpTelemetry() {
-            @Override
-            public boolean enabled() { return true; }
-
-            @Override
-            public boolean exportConsole() { return false; }
-
-            @Override
-            public boolean exportOtlp() { return false; }
-
-            @Override
-            public String otlpEndpoint() { return "http://localhost:4317"; }
-
-            @Override
-            public double sampleRate() { return 1.0; }
-
-            @Override
-            public boolean includeArguments() { return false; }
-
-            @Override
-            public long metricExportIntervalMs() { return 60000; }
-
-            @Override
-            public Class<?> annotationType() { return McpTelemetry.class; }
-        };
+        McpTelemetry annotation = createMockAnnotation(
+                true, false, false, "http://localhost:4317",
+                1.0, false, 60000
+        );
 
         TelemetryService service = TelemetryService.create("TestServer", annotation);
 
         try (TelemetryService.Span span = service.createSpan("testOperation", null)) {
             assertNotNull(span, "Span should be created");
-            // Simulate some work
         }
 
         service.close();
@@ -237,68 +151,26 @@ class TelemetryServiceTest {
 
     @Test
     void testCounterIncrement() {
-        McpTelemetry annotation = new McpTelemetry() {
-            @Override
-            public boolean enabled() { return true; }
-
-            @Override
-            public boolean exportConsole() { return false; }
-
-            @Override
-            public boolean exportOtlp() { return false; }
-
-            @Override
-            public String otlpEndpoint() { return "http://localhost:4317"; }
-
-            @Override
-            public double sampleRate() { return 1.0; }
-
-            @Override
-            public boolean includeArguments() { return false; }
-
-            @Override
-            public long metricExportIntervalMs() { return 60000; }
-
-            @Override
-            public Class<?> annotationType() { return McpTelemetry.class; }
-        };
+        McpTelemetry annotation = createMockAnnotation(
+                true, false, false, "http://localhost:4317",
+                1.0, false, 60000
+        );
 
         TelemetryService service = TelemetryService.create("TestServer", annotation);
 
         service.increment("requests.total");
         service.increment("requests.total");
-        service.increment("requests.total", 5);
+        service.increment("requests.total");
 
         service.close();
     }
 
     @Test
     void testHistogramRecord() {
-        McpTelemetry annotation = new McpTelemetry() {
-            @Override
-            public boolean enabled() { return true; }
-
-            @Override
-            public boolean exportConsole() { return false; }
-
-            @Override
-            public boolean exportOtlp() { return false; }
-
-            @Override
-            public String otlpEndpoint() { return "http://localhost:4317"; }
-
-            @Override
-            public double sampleRate() { return 1.0; }
-
-            @Override
-            public boolean includeArguments() { return false; }
-
-            @Override
-            public long metricExportIntervalMs() { return 60000; }
-
-            @Override
-            public Class<?> annotationType() { return McpTelemetry.class; }
-        };
+        McpTelemetry annotation = createMockAnnotation(
+                true, false, false, "http://localhost:4317",
+                1.0, false, 60000
+        );
 
         TelemetryService service = TelemetryService.create("TestServer", annotation);
 
@@ -312,36 +184,60 @@ class TelemetryServiceTest {
 
     @Test
     void testTraceContextMDC() {
-        McpTelemetry annotation = new McpTelemetry() {
-            @Override
-            public boolean enabled() { return true; }
-
-            @Override
-            public boolean exportConsole() { return false; }
-
-            @Override
-            public boolean exportOtlp() { return false; }
-
-            @Override
-            public String otlpEndpoint() { return "http://localhost:4317"; }
-
-            @Override
-            public double sampleRate() { return 1.0; }
-
-            @Override
-            public boolean includeArguments() { return false; }
-
-            @Override
-            public long metricExportIntervalMs() { return 60000; }
-
-            @Override
-            public Class<?> annotationType() { return McpTelemetry.class; }
-        };
+        McpTelemetry annotation = createMockAnnotation(
+                true, false, false, "http://localhost:4317",
+                1.0, false, 60000
+        );
 
         TelemetryService service = TelemetryService.create("TestServer", annotation);
 
         service.setTraceContext("trace-123", "span-456");
         service.clearTraceContext();
+
+        service.close();
+    }
+
+    @Test
+    void testSpanWithParent() {
+        McpTelemetry annotation = createMockAnnotation(
+                true, false, false, "http://localhost:4317",
+                1.0, false, 60000
+        );
+
+        TelemetryService service = TelemetryService.create("TestServer", annotation);
+
+        TelemetryService.Span parentSpan = service.createSpan("parentOperation", null);
+        assertNotNull(parentSpan, "Parent span should be created");
+
+        TelemetryService.Span childSpan = service.createSpan("childOperation", parentSpan.getSpanId());
+        assertNotNull(childSpan, "Child span should be created");
+        assertEquals(parentSpan.getTraceId(), childSpan.getTraceId(),
+                "Child span should have same trace ID as parent");
+        assertEquals(parentSpan.getSpanId(), childSpan.getParentSpanId(),
+                "Child span should have parent span ID as its parent");
+
+        childSpan.close();
+        parentSpan.close();
+        service.close();
+    }
+
+    @Test
+    void testMultipleToolsMetrics() {
+        McpTelemetry annotation = createMockAnnotation(
+                true, false, false, "http://localhost:4317",
+                1.0, false, 60000
+        );
+
+        TelemetryService service = TelemetryService.create("TestServer", annotation);
+
+        // Record metrics for different tools
+        service.recordToolInvocation("toolA", Duration.ofMillis(100), true);
+        service.recordToolInvocation("toolB", Duration.ofMillis(200), true);
+        service.recordToolInvocation("toolA", Duration.ofMillis(150), false);
+        service.recordToolInvocation("toolC", Duration.ofMillis(50), true);
+
+        service.increment("toolA.custom");
+        service.record("toolB.latency", 250);
 
         service.close();
     }
