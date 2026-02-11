@@ -41,7 +41,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.*;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.servlet.*;
+import org.eclipse.jetty.ee10.servlet.*;
 import reactor.core.publisher.Mono;
 
 import java.io.IOException;
