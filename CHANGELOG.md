@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **MCP SDK 2.0.1 Migration** - Upgraded from MCP Java SDK 0.17.2 to 2.0.1
+  - Replaced monolithic `mcp` artifact with `mcp-core` + `mcp-json-jackson2` (Jackson 2 path)
+  - `JacksonMcpJsonMapper` import moved to `io.modelcontextprotocol.json.jackson2`
+  - `AsyncToolSpecification` constructor no longer takes a `ServerCapabilities` argument (dropped `null` middle parameter)
+- Upgraded Jackson to 2.22.2, Lombok to 1.18.46, SLF4J to 2.0.18, JUnit to 5.14.4, Jetty to 12.0.38
+- Upgraded maven-compiler-plugin to 3.15.0
+
 ### Planned
 - Pagination support for large result sets
 - Progress tracking for long-running operations

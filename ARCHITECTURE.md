@@ -224,7 +224,8 @@ io.github.terseprompts.fastmcp/
 ## Dependencies
 
 ```
-io.modelcontextprotocol.sdk:mcp:0.17.2    # Official MCP SDK
+io.modelcontextprotocol.sdk:mcp-core:2.0.1   # Official MCP SDK (core)
+io.modelcontextprotocol.sdk:mcp-json-jackson2:2.0.1  # MCP SDK JSON (Jackson 2)
 com.fasterxml.jackson.core:jackson-databind   # JSON handling
 org.projectlombok:lombok                    # Code generation
 org.slf4j:slf4j-api + slf4j-simple          # Logging
