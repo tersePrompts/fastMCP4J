@@ -15,7 +15,7 @@ type: MCP Server Framework
 language: Java 17+
 license: MIT
 status: Beta (v0.3.1-beta) — JSON Schema 2020-12 compliant, security fixes, API stable
-mcp_spec: 0.17.2
+mcp_spec: 2.0.1
 transports: [stdio, sse, http_streamable]
 builtin_tools: [memory, todo, planner, fileread, filewrite]
 annotations:

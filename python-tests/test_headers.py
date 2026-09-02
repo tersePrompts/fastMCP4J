@@ -27,7 +27,7 @@ async def test_streamable_headers():
     print("=" * 60)
 
     try:
-        async with streamable_http_client("http://127.0.0.1:3002/mcp") as (read_stream, write_stream, get_session_id):
+        async with streamable_http_client("http://127.0.0.1:3002/mcp") as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 print("✓ Connected to streamable server")

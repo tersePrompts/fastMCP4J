@@ -28,7 +28,7 @@ import io.github.terseprompts.fastmcp.model.*;
 import io.github.terseprompts.fastmcp.annotations.scanner.AnnotationScanner;
 import io.github.terseprompts.fastmcp.adapter.schema.SchemaGenerator;
 import io.modelcontextprotocol.common.McpTransportContext;
-import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpAsyncServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
@@ -576,7 +576,7 @@ public final class FastMCP {
 
         var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(),
             new ResponseMarshaller(), serverName, hookManager, telemetry);
-        return new McpServerFeatures.AsyncToolSpecification(tool, null, handler.asHandler());
+        return new McpServerFeatures.AsyncToolSpecification(tool, handler.asHandler());
     }
 
     private McpServerFeatures.AsyncResourceSpecification buildResource(ResourceMeta resourceMeta, Object instance) {
@@ -640,7 +640,6 @@ public final class FastMCP {
 
             return new McpServerFeatures.AsyncToolSpecification(
                 tool,
-                null,
                 (McpAsyncServerExchange exchange, McpSchema.CallToolRequest args) -> {
                     try {
                         var handleMethod = toolInstance.getClass().getMethod(
