@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.0-beta] - 2026-09-02
+## [0.4.1-beta] - 2026-09-02
 
 ### Changed
 - **MCP SDK 2.0.1 Migration** - Upgraded from MCP Java SDK 0.17.2 to 2.0.1

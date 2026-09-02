@@ -18,7 +18,7 @@ Just annotate and run. See below →
 
 </div>
 
-**Note**: Beta release (v0.4.0-beta) — MCP Java SDK 2.0.1, upgraded dependencies. API stable.
+**Note**: Beta release (v0.4.1-beta) — MCP Java SDK 2.0.1, upgraded dependencies. API stable.
 
 ---
 
@@ -31,14 +31,14 @@ Just annotate and run. See below →
 <dependency>
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.4.0-beta</version>
+    <version>0.4.1-beta</version>
 </dependency>
 ```
 
 **Gradle:**
 ```groovy
 dependencies {
-    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.4.0-beta'
+    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.4.1-beta'
 }
 ```
 
