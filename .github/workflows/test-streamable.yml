@@ -2,9 +2,9 @@ name: MCP Integration Test - Streamable HTTP
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, development]
   push:
-    branches: [main]
+    branches: [main, development]
   workflow_dispatch:
 
 jobs:
