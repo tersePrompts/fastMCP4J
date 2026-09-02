@@ -18,7 +18,7 @@ Just annotate and run. See below →
 
 </div>
 
-**Note**: Beta release (v0.3.1-beta) — Multi-class modules, bash tools, telemetry. API stable.
+**Note**: Beta release (v0.4.0-beta) — MCP Java SDK 2.0.1, upgraded dependencies. API stable.
 
 ---
 
@@ -31,14 +31,14 @@ Just annotate and run. See below →
 <dependency>
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.3.1-beta</version>
+    <version>0.4.0-beta</version>
 </dependency>
 ```
 
 **Gradle:**
 ```groovy
 dependencies {
-    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.3.1-beta'
+    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.4.0-beta'
 }
 ```
 
@@ -489,6 +489,17 @@ Split tools across multiple classes for better organization.
 - Tool invocation: <5ms
 - Memory: ~64MB
 - Purpose-built for MCP — not a general AI framework
+
+---
+
+## CI/CD
+
+| Branch | What runs |
+|--------|-----------|
+| `development` (staging) | Tests + MCP integration suites (STDIO / SSE / Streamable) on every push and PR |
+| `main` | Same full test suite + **publish to Maven Central** (staged; requires manual approval in [Sonatype Central](https://central.sonatype.com/deployments)) |
+
+Flow: feature branch → `development` → `main` (release).
 
 ---
 

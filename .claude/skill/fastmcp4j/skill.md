@@ -11,13 +11,13 @@ You are working with **FastMCP4J**, a Java library for building MCP (Model Conte
 <dependency>
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.3.1-beta</version>
+    <version>0.4.0-beta</version>
 </dependency>
 ```
 
 **Gradle:**
 ```groovy
-implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.3.1-beta'
+implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.4.0-beta'
 ```
 
 ## Core Imports

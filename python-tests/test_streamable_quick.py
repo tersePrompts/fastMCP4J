@@ -71,7 +71,7 @@ async def run_test() -> bool:
         try:
             log_step(f"Connection attempt {attempt}/{MAX_RETRIES}...")
 
-            async with streamable_http_client(SERVER_URL) as (read_stream, write_stream, get_session_id):
+            async with streamable_http_client(SERVER_URL) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
                     log_result("Connection established", f"Connected to {SERVER_URL}")
 

@@ -14,8 +14,8 @@ name: FastMCP4J
 type: MCP Server Framework
 language: Java 17+
 license: MIT
-status: Beta (v0.3.1-beta) — JSON Schema 2020-12 compliant, security fixes, API stable
-mcp_spec: 0.17.2
+status: Beta (v0.4.0-beta) — MCP Java SDK 2.0.1, upgraded dependencies, API stable
+mcp_spec: 2.0.1
 transports: [stdio, sse, http_streamable]
 builtin_tools: [memory, todo, planner, fileread, filewrite]
 annotations:
@@ -34,8 +34,8 @@ annotations:
   - "@McpFileRead"
   - "@McpFileWrite"
 dependency:
-  maven: "io.github.terseprompts.fastmcp:fastmcp-java:0.3.0-beta"
-  gradle: "implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.3.0-beta'"
+  maven: "io.github.terseprompts.fastmcp:fastmcp-java:0.4.0-beta"
+  gradle: "implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.4.0-beta'"
 main_class: "io.github.terseprompts.fastmcp.core.FastMCP"
 example: |
   @McpServer(name="X", version="1.0") class X {
