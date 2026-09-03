@@ -51,7 +51,7 @@ import java.util.regex.Pattern;
  * call {@link #close()} to properly release resources. For MCP server use, the framework
  * handles cleanup automatically.
  */
-public class BashTool implements AutoCloseable {
+public class BashTool implements BashExecutor {
 
     private static final int DEFAULT_TIMEOUT_SECONDS = 30;
     private static final int MAX_COMMAND_LENGTH = 10000;

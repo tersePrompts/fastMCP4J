@@ -6,6 +6,7 @@ import io.github.terseprompts.fastmcp.json.ObjectMapperFactory;
 import io.github.terseprompts.fastmcp.annotations.McpMemory;
 import io.github.terseprompts.fastmcp.annotations.McpTodo;
 import io.github.terseprompts.fastmcp.annotations.McpPlanner;
+import io.github.terseprompts.fastmcp.annotations.BashMode;
 import io.github.terseprompts.fastmcp.annotations.McpBash;
 import io.github.terseprompts.fastmcp.annotations.McpFileRead;
 import io.github.terseprompts.fastmcp.annotations.McpFileWrite;
@@ -13,6 +14,7 @@ import io.github.terseprompts.fastmcp.annotations.McpTelemetry;
 import io.github.terseprompts.fastmcp.hook.HookManager;
 import io.github.terseprompts.fastmcp.telemetry.TelemetryService;
 import io.github.terseprompts.fastmcp.mcptools.bash.BashTool;
+import io.github.terseprompts.fastmcp.mcptools.bash.SandboxBashTool;
 import io.github.terseprompts.fastmcp.mcptools.fileread.FileReadTool;
 import io.github.terseprompts.fastmcp.mcptools.filewrite.FileWriteTool;
 import io.github.terseprompts.fastmcp.mcptools.memory.InMemoryMemoryStore;
@@ -103,6 +105,7 @@ public final class FastMCP {
 
     // Telemetry service (created from @McpTelemetry annotation)
     private TelemetryService telemetry;
+    private SandboxBashTool sandboxBashTool;
 
     // Server capabilities configuration
     private Consumer<ServerCapabilitiesBuilder> capabilitiesConfigurer = caps -> {
@@ -302,6 +305,7 @@ public final class FastMCP {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 mcp.closeGracefully().block(Duration.ofSeconds(10));
                 if (telemetry != null) telemetry.close();
+                if (sandboxBashTool != null) sandboxBashTool.close();
                 if (jetty != null) try { jetty.stop(); } catch (Exception ignored) {}
             }));
 
@@ -507,12 +511,32 @@ public final class FastMCP {
 
             if (serverClass.isAnnotationPresent(McpBash.class)) {
                 McpBash bashAnn = serverClass.getAnnotation(McpBash.class);
-                BashTool bashTool = new BashTool(
-                    bashAnn.timeout(),
-                    bashAnn.visibleAfterBasePath(),
-                    List.of(bashAnn.notAllowedPaths())
-                );
-                specs.add(buildBuiltinTool(bashTool, "bash", bashTool.getToolDescription()));
+                if (bashAnn.mode() == BashMode.HOST) {
+                    BashTool bashTool = new BashTool(
+                        bashAnn.timeout(),
+                        bashAnn.visibleAfterBasePath(),
+                        List.of(bashAnn.notAllowedPaths())
+                    );
+                    specs.add(buildBuiltinTool(bashTool, "bash", bashTool.getToolDescription()));
+                } else {
+                    try {
+                        sandboxBashTool = new SandboxBashTool(
+                            bashAnn.timeout(),
+                            bashAnn.maxCommands(),
+                            bashAnn.username(),
+                            bashAnn.hostname(),
+                            bashAnn.cwd(),
+                            bashAnn.env(),
+                            bashAnn.mounts(),
+                            bashAnn.allowMountsUnder()
+                        );
+                    } catch (NoClassDefFoundError e) {
+                        throw new IllegalStateException(
+                            "bashkit4j is not on the classpath — add io.github.terseprompts:bashkit4j:0.2.0 "
+                                + "to use @McpBash sandbox mode (default)", e);
+                    }
+                    specs.add(buildBuiltinTool(sandboxBashTool, "bash", sandboxBashTool.getToolDescription()));
+                }
             }
 
             if (!specs.isEmpty()) {
