@@ -18,6 +18,10 @@ touch your machine. No boilerplate, no containers, no 50-jar framework.
 
 </div>
 
+<p align="center">
+  <img src=".github/assets/sandbox-demo.svg" alt="An AI agent driving the sandboxed bash tool: virtual identity, read-only project mounts, network denied, destructive commands blocked — writes stay in the sandbox." width="720">
+</p>
+
 FastMCP4J is an annotation-driven SDK for the
 [Model Context Protocol](https://modelcontextprotocol.io) (spec 2.0.1) on
 Java 17+. One annotation turns a class into an MCP server; one more gives your
