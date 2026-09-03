@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="432" viewBox="0 0 720 432" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
+  <rect width="720" height="432" rx="10" fill="#0d1117"/>
+  <rect width="720" height="34" rx="10" fill="#161b22"/>
+  <rect y="24" width="720" height="10" fill="#161b22"/>
+  <circle cx="20" cy="17" r="6" fill="#ff5f57"/>
+  <circle cx="40" cy="17" r="6" fill="#febc2e"/>
+  <circle cx="60" cy="17" r="6" fill="#28c840"/>
+  <text x="360" y="22" text-anchor="middle" fill="#8b949e" font-size="12">AI agent ⇄ fastMCP4J — the bash tool's entire world</text>
+
+  <!-- tool discovery -->
+  <text x="24" y="64" font-size="13" fill="#79c0ff" opacity="0">❯ tools/list
+    <animate attributeName="opacity" begin="0.3s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+  <text x="42" y="86" font-size="13" fill="#c9d1d9" opacity="0">memory   todo   planner   file-read   <tspan fill="#7ee787" font-weight="bold">bash ✓</tspan>
+    <animate attributeName="opacity" begin="0.75s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+
+  <!-- virtual identity -->
+  <text x="24" y="116" font-size="13" fill="#79c0ff" opacity="0">❯ bash: whoami
+    <animate attributeName="opacity" begin="1.4s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+  <text x="42" y="138" font-size="13" fill="#c9d1d9" opacity="0">agent@sandbox — a virtual identity, not your OS user
+    <animate attributeName="opacity" begin="1.85s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+
+  <!-- mounted, read-only -->
+  <text x="24" y="168" font-size="13" fill="#79c0ff" opacity="0">❯ bash: grep -rn "TODO" /project/src | head -1
+    <animate attributeName="opacity" begin="2.5s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+  <text x="42" y="190" font-size="13" fill="#c9d1d9" opacity="0">src/App.java:12:  // TODO retry logic   <tspan fill="#d2a8ff">← mounted read-only, real files</tspan>
+    <animate attributeName="opacity" begin="2.95s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+
+  <!-- network denied -->
+  <text x="24" y="220" font-size="13" fill="#79c0ff" opacity="0">❯ bash: curl -s https://example.com
+    <animate attributeName="opacity" begin="3.6s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+  <text x="42" y="242" font-size="13" fill="#f85149" opacity="0">curl: network access not configured
+    <animate attributeName="opacity" begin="4.05s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+
+  <!-- destructive blocked -->
+  <text x="24" y="272" font-size="13" fill="#79c0ff" opacity="0">❯ bash: rm -rf /project
+    <animate attributeName="opacity" begin="4.7s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+  <text x="42" y="294" font-size="13" fill="#f85149" opacity="0">rm: cannot remove '/project': read-only mount
+    <animate attributeName="opacity" begin="5.15s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+
+  <!-- writes stay inside -->
+  <text x="24" y="324" font-size="13" fill="#79c0ff" opacity="0">❯ bash: echo "review shipped" > /notes.md
+    <animate attributeName="opacity" begin="5.8s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+  <text x="42" y="346" font-size="13" fill="#c9d1d9" opacity="0">✓ written to the virtual fs — your disk was never touched
+    <animate attributeName="opacity" begin="6.25s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+
+  <!-- idle prompt with blinking cursor -->
+  <text x="24" y="382" font-size="13" fill="#79c0ff" opacity="0">❯
+    <animate attributeName="opacity" begin="6.9s" dur="0.05s" fill="freeze" from="0" to="1"/>
+  </text>
+  <rect x="41" y="372" width="8" height="14" fill="#7ee787" opacity="0">
+    <animate attributeName="opacity" begin="7.3s" dur="0.05s" fill="freeze" from="0" to="1"/>
+    <animate attributeName="opacity" values="1;1;0;1" keyTimes="0;0.55;0.8;1" dur="1.2s" begin="7.3s" repeatCount="indefinite"/>
+  </rect>
+</svg>
