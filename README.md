@@ -6,15 +6,17 @@
 
 **[AI Agents →](.claude/skill/fastmcp4j/skill.md)** Share this skill with Claude for code generation
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.terseprompts/fastmcp-java)](https://central.sonatype.com/artifact/io.github.terseprompts/fastmcp-java)
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
 [![Maven](https://img.shields.io/badge/Maven-3.8+-red.svg)](https://maven.apache.org/)
+[![CI](https://github.com/tersePrompts/fastMCP4J/actions/workflows/test.yml/badge.svg)](https://github.com/tersePrompts/fastMCP4J/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-211%20Passing-brightgreen.svg)](src/test/java)
+[![Tests](https://img.shields.io/badge/Tests-235%20Passing-brightgreen.svg)](src/test/java)
 [![MCP Marketplace](https://img.shields.io/badge/MCP%20Marketplace-Indexed-blueviolet)](https://getlulu.dev/mcps)
 
 **Lightweight. 12 dependencies. No containers.**
 
-Just annotate and run. See below →
+Just annotate and run. Give your AI agent a terminal — in a sandbox that can't touch your machine. See below →
 
 </div>
 
@@ -401,32 +403,55 @@ public class MyServer {
 
 ### @McpBash — Sandboxed Bash (default) + Host Shell
 
-Two modes, chosen per server class with `mode`:
+**Give your AI agent a terminal — without giving it your machine.** Two modes,
+chosen per server class with `mode`:
 
 **🟢 Sandbox mode (default)** — scripts run in a [bashkit4j](https://github.com/tersePrompts/bashkit4j)
-in-memory sandbox: a virtual computer with its own filesystem, processes, and
-environment. The host is unreachable by construction. State persists across
-calls (cwd, env, files), enabling multi-step agent workflows.
+in-memory sandbox: a POSIX-style bash with 160+ commands re-implemented
+natively, an in-memory virtual filesystem, and network denied by default.
+**No real bash is ever spawned.** The script gets a computer that doesn't
+exist; your machine stays yours.
+
+Give it a real job — analyzing a project with **read-only eyes**, keeping its
+own scratch space:
 
 ```java
-@McpServer(name = "MyServer", version = "1.0")
+@McpServer(name = "Reviewer", version = "1.0")
 @McpBash(
-    timeout = 30,                        // per-call timeout in seconds
-    maxCommands = 10_000,                // bounds runaway scripts
-    username = "agent", hostname = "sandbox",
-    mounts = {"/project=C:/dev/my-app"},  // host dirs, read-only (":rw" = writable)
-    allowMountsUnder = "C:/dev"           // required for mounts — native-enforced
+    allowMountsUnder = "C:/dev",           // opt in: all it may ever see
+    mounts = {"/project=C:/dev/my-app"},   // mount the project — read-only
+    timeout = 30, maxCommands = 10_000     // bounds runaway scripts
 )
-public class MyServer { }
+public class Reviewer { }
 ```
+
+Then the agent calls the `bash` tool:
+
+```
+grep -rn TODO /project/src | head -5      # real files, zero risk
+echo "findings..." > /notes.md            # writes stay in the sandbox
+```
+
+Writes land in the sandbox's private filesystem — the agent summarizes, your
+disk was never writable, no process was ever spawned.
+
+| | Host shell (`ProcessBuilder`, Docker) | **Sandbox mode** |
+|---|---|---|
+| Real bash on the host | ✅ runs — full attack surface | **❌ never — bash re-implemented natively** |
+| Host filesystem visible | ✅ all of it | **❌ invisible until you mount, read-only by default** |
+| OS processes per command | ✅ one per call | **❌ zero — everything runs in-process** |
+| Network access | ✅ open | **❌ denied by default** |
+| One rogue script | node down | **sandbox reset** |
 
 **Isolation guarantees:**
 - No host filesystem, process, or network access unless explicitly mounted
 - Mounts require `allowMountsUnder` prefixes, canonicalized and enforced
   inside the native library — `..` and symlink tricks can't escape
-- Sandbox survives runaway scripts (`maxCommands`) and per-call timeouts
+- State persists across calls (cwd, env, files) — multi-step agent workflows
+  work; isolation across servers still holds
 
-> Sandbox mode requires the optional `io.github.terseprompts:bashkit4j:0.2.0` dependency.
+> Sandbox mode requires the optional `io.github.terseprompts:bashkit4j:0.2.0` dependency
+> (native libs for Windows/Linux/macOS, x86-64 + ARM64, are bundled and auto-detected).
 
 **🟠 Host mode** — the real shell (cmd.exe / bash / zsh) with legacy guardrails.
 For trusted environments only.
