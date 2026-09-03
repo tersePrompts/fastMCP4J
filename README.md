@@ -18,7 +18,7 @@ Just annotate and run. See below →
 
 </div>
 
-**Note**: Beta release (v0.4.1-beta) — MCP Java SDK 2.0.1, upgraded dependencies. API stable.
+**Note**: Beta release (v0.5.0-beta) — Sandboxed bash (bashkit4j), MCP Java SDK 2.0.1. API stable.
 
 ---
 
@@ -31,14 +31,14 @@ Just annotate and run. See below →
 <dependency>
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.4.1-beta</version>
+    <version>0.5.0-beta</version>
 </dependency>
 ```
 
 **Gradle:**
 ```groovy
 dependencies {
-    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.4.1-beta'
+    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.5.0-beta'
 }
 ```
 
@@ -160,15 +160,18 @@ public class MyServer {
 }
 ```
 
-### Add bash/shell execution
+### Add sandboxed bash
 
 ```java
 @McpServer(name = "MyServer", version = "1.0")
-@McpBash(timeout = 30)  // Shell command execution with security guardrails
+@McpBash  // runs scripts in a bashkit4j in-memory sandbox — safe default
 public class MyServer {
-    // Provides 'execute_command' tool with OS-aware shell selection
+    // Provides the 'bash' tool: a virtual computer with its own filesystem
 }
 ```
+
+> Sandbox mode needs `io.github.terseprompts:bashkit4j:0.2.0` on the classpath (optional dependency).
+> For the real host shell, use `@McpBash(mode = BashMode.HOST, ...)` — trusted environments only.
 
 ### Add telemetry
 
@@ -270,7 +273,7 @@ Add ONE annotation, get complete functionality.
 | `@McpContext` | PARAMETER | Inject request context |
 | `@McpPreHook` | METHOD | Run before tool call (params: `toolName`, `order`) |
 | `@McpPostHook` | METHOD | Run after tool call (params: `toolName`, `order`) |
-| `@McpBash` | TYPE | Enable bash/shell command execution tool |
+| `@McpBash` | TYPE | Enable bash tool — sandboxed (default) or host shell via `mode` |
 | `@McpTelemetry` | TYPE | Enable metrics and tracing (params: `enabled`, `exportConsole`, `exportOtlp`, `sampleRate`) |
 | `@McpMemory` | TYPE | Enable memory tools |
 | `@McpTodo` | TYPE | Enable todo/task management tools |
@@ -396,30 +399,46 @@ public class MyServer {
 
 ## New Features
 
-### @McpBash — Shell Command Execution
+### @McpBash — Sandboxed Bash (default) + Host Shell
 
-Execute shell commands with OS-aware shell selection and built-in security guardrails.
+Two modes, chosen per server class with `mode`:
+
+**🟢 Sandbox mode (default)** — scripts run in a [bashkit4j](https://github.com/tersePrompts/bashkit4j)
+in-memory sandbox: a virtual computer with its own filesystem, processes, and
+environment. The host is unreachable by construction. State persists across
+calls (cwd, env, files), enabling multi-step agent workflows.
 
 ```java
 @McpServer(name = "MyServer", version = "1.0")
 @McpBash(
-    timeout = 30,                          // Command timeout in seconds
-    visibleAfterBasePath = "/sandbox/*",   // Whitelist allowed directories
-    notAllowedPaths = {"/etc", "/root"}    // Blacklist dangerous paths
+    timeout = 30,                        // per-call timeout in seconds
+    maxCommands = 10_000,                // bounds runaway scripts
+    username = "agent", hostname = "sandbox",
+    mounts = {"/project=C:/dev/my-app"},  // host dirs, read-only (":rw" = writable)
+    allowMountsUnder = "C:/dev"           // required for mounts — native-enforced
 )
 public class MyServer { }
 ```
 
-**Security features:**
-- Directory validation (whitelist/blacklist)
-- Dangerous command blocking (rm -rf, wget, curl, ssh, etc.)
-- Directory traversal prevention
-- Cross-platform path handling (Windows/Unix)
+**Isolation guarantees:**
+- No host filesystem, process, or network access unless explicitly mounted
+- Mounts require `allowMountsUnder` prefixes, canonicalized and enforced
+  inside the native library — `..` and symlink tricks can't escape
+- Sandbox survives runaway scripts (`maxCommands`) and per-call timeouts
 
-**Supported shells:**
-- Windows: `cmd.exe`
-- macOS: `/bin/zsh`
-- Linux: `/bin/bash`
+> Sandbox mode requires the optional `io.github.terseprompts:bashkit4j:0.2.0` dependency.
+
+**🟠 Host mode** — the real shell (cmd.exe / bash / zsh) with legacy guardrails.
+For trusted environments only.
+
+```java
+@McpBash(
+    mode = BashMode.HOST,
+    timeout = 30,
+    visibleAfterBasePath = "/sandbox/*",   // whitelist allowed directories
+    notAllowedPaths = {"/etc", "/root"}    // blacklist dangerous paths
+)
+```
 
 ### @McpTelemetry — Metrics & Tracing
 

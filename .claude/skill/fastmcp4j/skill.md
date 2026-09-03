@@ -11,13 +11,13 @@ You are working with **FastMCP4J**, a Java library for building MCP (Model Conte
 <dependency>
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.4.1-beta</version>
+    <version>0.5.0-beta</version>
 </dependency>
 ```
 
 **Gradle:**
 ```groovy
-implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.4.1-beta'
+implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.5.0-beta'
 ```
 
 ## Core Imports
@@ -48,7 +48,7 @@ import reactor.core.publisher.Mono;
 | `@McpPlanner` | TYPE | Enable planning tools |
 | `@McpFileRead` | TYPE | Enable file reading tools |
 | `@McpFileWrite` | TYPE | Enable file writing tools |
-| `@McpBash` | TYPE | Enable shell command execution |
+| `@McpBash` | TYPE | Enable bash tool — sandboxed (default, needs `bashkit4j` dep) or host shell (`mode = BashMode.HOST`) |
 | `@McpTelemetry` | TYPE | Enable metrics and tracing |
 
 ## Code Patterns
@@ -134,7 +134,7 @@ public class MyServer { }
 @McpPlanner     // AI breaks tasks into steps
 @McpFileRead    // AI reads files
 @McpFileWrite   // AI writes files
-@McpBash        // AI executes shell commands
+@McpBash        // AI runs scripts in a bashkit4j sandbox (host unreachable)
 @McpTelemetry   // Metrics and tracing
 public class MyServer { }
 ```

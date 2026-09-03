@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0-beta] - 2026-09-03
+
+### Added
+- **Sandboxed bash** — `@McpBash` now defaults to a bashkit4j in-memory sandbox
+  (`io.github.terseprompts:bashkit4j:0.2.0`, optional dependency): virtual
+  filesystem/processes/env, host unreachable by construction, state persists
+  across tool calls (cwd, env, files)
+- **Host-directory mounts** — expose host dirs to the sandbox via
+  `mounts = {"/vfs=host/dir"}` (read-only, `:rw` for writable), allowlisted by
+  `allowMountsUnder` and enforced inside the native library
+- `mode()` attribute selecting `BashMode.SANDBOX` (default) or
+  `BashMode.HOST` (legacy real-shell execution)
+- New MCP integration test (`test_bash_stdio.py`) and CI workflow
+  (`test-bash.yml`) covering the sandbox over real stdio transport
+
+### Changed
+- **Breaking**: `@McpBash` default mode is now `SANDBOX` — servers using the
+  annotation without explicit configuration switch from real-shell execution
+  to the sandbox and need the `bashkit4j` dependency on the classpath
+- Host-mode path guardrails (`visibleAfterBasePath`, `notAllowedPaths`) apply
+  only to `mode = BashMode.HOST`; the sandbox needs no path blacklists
+
 ## [0.4.1-beta] - 2026-09-02
 
 ### Changed
