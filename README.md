@@ -6,19 +6,21 @@
 
 **[AI Agents →](.claude/skill/fastmcp4j/skill.md)** Share this skill with Claude for code generation
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.terseprompts/fastmcp-java)](https://central.sonatype.com/artifact/io.github.terseprompts/fastmcp-java)
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
 [![Maven](https://img.shields.io/badge/Maven-3.8+-red.svg)](https://maven.apache.org/)
+[![CI](https://github.com/tersePrompts/fastMCP4J/actions/workflows/test.yml/badge.svg)](https://github.com/tersePrompts/fastMCP4J/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-211%20Passing-brightgreen.svg)](src/test/java)
+[![Tests](https://img.shields.io/badge/Tests-235%20Passing-brightgreen.svg)](src/test/java)
 [![MCP Marketplace](https://img.shields.io/badge/MCP%20Marketplace-Indexed-blueviolet)](https://getlulu.dev/mcps)
 
 **Lightweight. 12 dependencies. No containers.**
 
-Just annotate and run. See below →
+Just annotate and run. Give your AI agent a terminal — in a sandbox that can't touch your machine. See below →
 
 </div>
 
-**Note**: Beta release (v0.4.1-beta) — MCP Java SDK 2.0.1, upgraded dependencies. API stable.
+**Note**: Beta release (v0.5.0-beta) — Sandboxed bash (bashkit4j), MCP Java SDK 2.0.1. API stable.
 
 ---
 
@@ -31,14 +33,14 @@ Just annotate and run. See below →
 <dependency>
     <groupId>io.github.terseprompts.fastmcp</groupId>
     <artifactId>fastmcp-java</artifactId>
-    <version>0.4.1-beta</version>
+    <version>0.5.0-beta</version>
 </dependency>
 ```
 
 **Gradle:**
 ```groovy
 dependencies {
-    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.4.1-beta'
+    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.5.0-beta'
 }
 ```
 
@@ -160,15 +162,18 @@ public class MyServer {
 }
 ```
 
-### Add bash/shell execution
+### Add sandboxed bash
 
 ```java
 @McpServer(name = "MyServer", version = "1.0")
-@McpBash(timeout = 30)  // Shell command execution with security guardrails
+@McpBash  // runs scripts in a bashkit4j in-memory sandbox — safe default
 public class MyServer {
-    // Provides 'execute_command' tool with OS-aware shell selection
+    // Provides the 'bash' tool: a virtual computer with its own filesystem
 }
 ```
+
+> Sandbox mode needs `io.github.terseprompts:bashkit4j:0.2.0` on the classpath (optional dependency).
+> For the real host shell, use `@McpBash(mode = BashMode.HOST, ...)` — trusted environments only.
 
 ### Add telemetry
 
@@ -270,7 +275,7 @@ Add ONE annotation, get complete functionality.
 | `@McpContext` | PARAMETER | Inject request context |
 | `@McpPreHook` | METHOD | Run before tool call (params: `toolName`, `order`) |
 | `@McpPostHook` | METHOD | Run after tool call (params: `toolName`, `order`) |
-| `@McpBash` | TYPE | Enable bash/shell command execution tool |
+| `@McpBash` | TYPE | Enable bash tool — sandboxed (default) or host shell via `mode` |
 | `@McpTelemetry` | TYPE | Enable metrics and tracing (params: `enabled`, `exportConsole`, `exportOtlp`, `sampleRate`) |
 | `@McpMemory` | TYPE | Enable memory tools |
 | `@McpTodo` | TYPE | Enable todo/task management tools |
@@ -396,30 +401,69 @@ public class MyServer {
 
 ## New Features
 
-### @McpBash — Shell Command Execution
+### @McpBash — Sandboxed Bash (default) + Host Shell
 
-Execute shell commands with OS-aware shell selection and built-in security guardrails.
+**Give your AI agent a terminal — without giving it your machine.** Two modes,
+chosen per server class with `mode`:
+
+**🟢 Sandbox mode (default)** — scripts run in a [bashkit4j](https://github.com/tersePrompts/bashkit4j)
+in-memory sandbox: a POSIX-style bash with 160+ commands re-implemented
+natively, an in-memory virtual filesystem, and network denied by default.
+**No real bash is ever spawned.** The script gets a computer that doesn't
+exist; your machine stays yours.
+
+Give it a real job — analyzing a project with **read-only eyes**, keeping its
+own scratch space:
 
 ```java
-@McpServer(name = "MyServer", version = "1.0")
+@McpServer(name = "Reviewer", version = "1.0")
 @McpBash(
-    timeout = 30,                          // Command timeout in seconds
-    visibleAfterBasePath = "/sandbox/*",   // Whitelist allowed directories
-    notAllowedPaths = {"/etc", "/root"}    // Blacklist dangerous paths
+    allowMountsUnder = "C:/dev",           // opt in: all it may ever see
+    mounts = {"/project=C:/dev/my-app"},   // mount the project — read-only
+    timeout = 30, maxCommands = 10_000     // bounds runaway scripts
 )
-public class MyServer { }
+public class Reviewer { }
 ```
 
-**Security features:**
-- Directory validation (whitelist/blacklist)
-- Dangerous command blocking (rm -rf, wget, curl, ssh, etc.)
-- Directory traversal prevention
-- Cross-platform path handling (Windows/Unix)
+Then the agent calls the `bash` tool:
 
-**Supported shells:**
-- Windows: `cmd.exe`
-- macOS: `/bin/zsh`
-- Linux: `/bin/bash`
+```
+grep -rn TODO /project/src | head -5      # real files, zero risk
+echo "findings..." > /notes.md            # writes stay in the sandbox
+```
+
+Writes land in the sandbox's private filesystem — the agent summarizes, your
+disk was never writable, no process was ever spawned.
+
+| | Host shell (`ProcessBuilder`, Docker) | **Sandbox mode** |
+|---|---|---|
+| Real bash on the host | ✅ runs — full attack surface | **❌ never — bash re-implemented natively** |
+| Host filesystem visible | ✅ all of it | **❌ invisible until you mount, read-only by default** |
+| OS processes per command | ✅ one per call | **❌ zero — everything runs in-process** |
+| Network access | ✅ open | **❌ denied by default** |
+| One rogue script | node down | **sandbox reset** |
+
+**Isolation guarantees:**
+- No host filesystem, process, or network access unless explicitly mounted
+- Mounts require `allowMountsUnder` prefixes, canonicalized and enforced
+  inside the native library — `..` and symlink tricks can't escape
+- State persists across calls (cwd, env, files) — multi-step agent workflows
+  work; isolation across servers still holds
+
+> Sandbox mode requires the optional `io.github.terseprompts:bashkit4j:0.2.0` dependency
+> (native libs for Windows/Linux/macOS, x86-64 + ARM64, are bundled and auto-detected).
+
+**🟠 Host mode** — the real shell (cmd.exe / bash / zsh) with legacy guardrails.
+For trusted environments only.
+
+```java
+@McpBash(
+    mode = BashMode.HOST,
+    timeout = 30,
+    visibleAfterBasePath = "/sandbox/*",   // whitelist allowed directories
+    notAllowedPaths = {"/etc", "/root"}    // blacklist dangerous paths
+)
+```
 
 ### @McpTelemetry — Metrics & Tracing
 
