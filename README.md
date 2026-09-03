@@ -2,33 +2,38 @@
 
 # FastMCP4J
 
-### Java library for building MCP servers — annotation-driven, minimal dependencies
-
-**[AI Agents →](.claude/skill/fastmcp4j/skill.md)** Share this skill with Claude for code generation
-
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.terseprompts/fastmcp-java)](https://central.sonatype.com/artifact/io.github.terseprompts/fastmcp-java)
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
-[![Maven](https://img.shields.io/badge/Maven-3.8+-red.svg)](https://maven.apache.org/)
 [![CI](https://github.com/tersePrompts/fastMCP4J/actions/workflows/test.yml/badge.svg)](https://github.com/tersePrompts/fastMCP4J/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-235%20Passing-brightgreen.svg)](src/test/java)
 [![MCP Marketplace](https://img.shields.io/badge/MCP%20Marketplace-Indexed-blueviolet)](https://getlulu.dev/mcps)
 
-**Lightweight. 12 dependencies. No containers.**
+**Annotate a Java class. Ship an MCP server.**
 
-Just annotate and run. Give your AI agent a terminal — in a sandbox that can't touch your machine. See below →
+Tools, resources, prompts, memory — and a sandboxed bash terminal that can't
+touch your machine. No boilerplate, no containers, no 50-jar framework.
+
+**[AI Agents →](.claude/skill/fastmcp4j/skill.md)** Share this skill with Claude for code generation
 
 </div>
 
-**Note**: Beta release (v0.5.0-beta) — Sandboxed bash (bashkit4j), MCP Java SDK 2.0.1. API stable.
+FastMCP4J is an annotation-driven SDK for the
+[Model Context Protocol](https://modelcontextprotocol.io) (spec 2.0.1) on
+Java 17+. One annotation turns a class into an MCP server; one more gives your
+AI agent a real terminal — **a bash sandbox where the host is unreachable by
+construction**. Cold start in under 500 ms, twelve dependencies, everything
+testable in-process.
+
+> **Status**: beta (v0.5.0-beta) — API stable, 235 tests passing, published to
+> [Maven Central](https://central.sonatype.com/artifact/io.github.terseprompts/fastmcp-java).
 
 ---
 
-## Quick Start (2 minutes)
+## Quick start (2 minutes)
 
-### Add dependency
+**Maven**
 
-**Maven:**
 ```xml
 <dependency>
     <groupId>io.github.terseprompts.fastmcp</groupId>
@@ -37,12 +42,15 @@ Just annotate and run. Give your AI agent a terminal — in a sandbox that can't
 </dependency>
 ```
 
-**Gradle:**
+**Gradle**
+
 ```groovy
-dependencies {
-    implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.5.0-beta'
-}
+implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.5.0-beta'
 ```
+
+That's the whole install story: **Java 17+**, one artifact on Maven Central,
+MCP Java SDK 2.0.1 underneath. No annotation processor, no codegen step, no
+container runtime.
 
 ### Create your server
 
@@ -63,9 +71,6 @@ public class MyAssistant {
 }
 ```
 
-
-### Run it
-
 ```bash
 mvn exec:java -Dexec.mainClass="com.example.MyAssistant"
 ```
@@ -76,34 +81,39 @@ mvn exec:java -Dexec.mainClass="com.example.MyAssistant"
 
 ---
 
-## Who This Is For
+## Why this exists
 
-| You want to... | FastMCP4J |
-|----------------|-----------|
-| Expose Java tools to AI agents | ✅ Perfect fit |
-| Build MCP servers quickly | ✅ Annotation-driven, minimal code |
-| Add MCP to existing Spring app | ✅ Drop-in, no framework lock-in |
-| Lightweight MCP-only solution | ✅ 12 dependencies, not 50+ |
-| Fast startup & low memory | ✅ <500ms cold start, ~64MB |
+Every Java team wiring AI agents to tools faces the same choice, and every
+option hurts:
+
+| | Raw MCP SDK | Spring AI / LangChain4j | **FastMCP4J** |
+|---|---|---|---|
+| Lines per tool | 35+ | varies, plus framework glue | **~8** |
+| Dependencies | 1 + your patience | 30–50+ jars | **12 jars** |
+| Startup | fast | framework-sized | **<500 ms, ~64 MB** |
+| Sandboxed bash | roll your own | not included | **✅ built-in (bashkit4j)** |
+| Built-in memory / todo / planner / file tools | no | no | **✅ one annotation each** |
+| Lock-in | none | framework | **none — MCP in, MCP out** |
+
+> **Before:** a day of JSON-schema plumbing per tool, and shell access means a
+> rogue prompt is a node down.
+> **After:** annotations on Tuesday, agents in production Wednesday — and the
+> terminal they use can't touch your disk.
 
 ---
 
-## How to Use
+## The API tour
 
-### Make a tool
+### 1 · Make a tool — sync or async
 
 ```java
 @McpTool(description = "Add two numbers")
 public int add(int a, int b) {
     return a + b;
 }
-```
 
-### Make it async
-
-```java
 @McpTool(description = "Process data")
-@McpAsync  // ← just add this
+@McpAsync  // ← just add this; return Mono<?>
 public Mono<String> process(@McpContext Context ctx, String input) {
     return Mono.fromCallable(() -> {
         ctx.reportProgress(50, "Processing...");
@@ -112,96 +122,83 @@ public Mono<String> process(@McpContext Context ctx, String input) {
 }
 ```
 
-### Add memory
+### 2 · Built-in brains — one annotation each
 
 ```java
 @McpServer(name = "MyServer", version = "1.0")
-@McpMemory  // ← just add this
-public class MyServer {
-    // AI now remembers things across sessions
-}
-```
-
-### Add all built-in tools
-
-```java
-@McpServer(name = "MyServer", version = "1.0")
-@McpMemory     // AI remembers
+@McpMemory     // AI remembers things across sessions
 @McpTodo       // AI manages tasks
-@McpPlanner    // AI breaks tasks into steps
+@McpPlanner    // AI breaks work into plans
 @McpFileRead   // AI reads your files
 @McpFileWrite  // AI writes files
 public class MyServer {
-    // All tools enabled, zero implementation needed
+    // complete tool sets enabled, zero implementation
 }
 ```
 
-### Organize tools across multiple classes
+| Annotation | Tools you get |
+|------------|---------------|
+| `@McpMemory` | list, read, create, replace, insert, delete, rename |
+| `@McpTodo` | add, list, updateStatus, updateTask, delete, clearCompleted |
+| `@McpPlanner` | createPlan, listPlans, getPlan, addTask, addSubtask |
+| `@McpFileRead` | readLines, readFile, grep, getStats |
+| `@McpFileWrite` | writeFile, appendFile, writeLines, deleteFile, createDirectory |
+
+### 3 · Sandboxed bash — give the agent a terminal, not your machine
 
 ```java
-@McpServer(
-    name = "MyServer",
-    version = "1.0",
-    modules = {StringTools.class, MathTools.class}  // Explicit modules
+@McpServer(name = "Reviewer", version = "1.0")
+@McpBash(
+    allowMountsUnder = "C:/dev",           // opt in: all it may ever see
+    mounts = {"/project=C:/dev/my-app"},   // mount the project — read-only
+    timeout = 30, maxCommands = 10_000     // bounds runaway scripts
 )
-public class MyServer {
-    // Tools from StringTools and MathTools are included
-}
+public class Reviewer { }
 ```
 
-Or use package scanning for auto-discovery:
+Scripts run in a [bashkit4j](https://github.com/tersePrompts/bashkit4j)
+in-memory sandbox: POSIX-style bash with 160+ commands re-implemented
+natively, a virtual filesystem, network denied by default. **No real bash is
+ever spawned.** Then the agent calls the `bash` tool:
 
-```java
-@McpServer(
-    name = "MyServer",
-    version = "1.0",
-    scanBasePackage = "com.example.tools"  // Auto-discover all tools
-)
-public class MyServer {
-    // All @McpTool classes in the package are included
-}
+```
+grep -rn TODO /project/src | head -5      # real files, zero risk
+echo "findings..." > /notes.md            # writes stay in the sandbox
 ```
 
-### Add sandboxed bash
+| | Host shell (`ProcessBuilder`, Docker) | **Sandbox mode** |
+|---|---|---|
+| Real bash on the host | ✅ runs — full attack surface | **❌ never — bash re-implemented natively** |
+| Host filesystem visible | ✅ all of it | **❌ invisible until you mount, read-only by default** |
+| OS processes per command | ✅ one per call | **❌ zero — in-process** |
+| Network access | ✅ open | **❌ denied by default** |
+| One rogue script | node down | **sandbox reset** |
 
-```java
-@McpServer(name = "MyServer", version = "1.0")
-@McpBash  // runs scripts in a bashkit4j in-memory sandbox — safe default
-public class MyServer {
-    // Provides the 'bash' tool: a virtual computer with its own filesystem
-}
-```
+State persists across calls (cwd, env, files) — multi-step agent workflows
+work. Mounts are enforced inside the native library: canonicalized,
+symlink-safe, and impossible without `allowMountsUnder`. Need the real shell
+for trusted automation? `mode = BashMode.HOST` keeps the legacy tool with its
+path guardrails.
 
-> Sandbox mode needs `io.github.terseprompts:bashkit4j:0.2.0` on the classpath (optional dependency).
-> For the real host shell, use `@McpBash(mode = BashMode.HOST, ...)` — trusted environments only.
+> Sandbox mode requires the optional
+> `io.github.terseprompts:bashkit4j:0.2.0` dependency — native libs for
+> Windows/Linux/macOS (x86-64 + ARM64) are bundled and auto-detected.
 
-### Add telemetry
-
-```java
-@McpServer(name = "MyServer", version = "1.0")
-@McpTelemetry(enabled = true, exportConsole = true)  // Metrics & tracing
-public class MyServer {
-    // Automatic tool invocation tracking with console export
-}
-```
-
-### Choose transport
+### 4 · Pick a transport
 
 ```java
 FastMCP.server(MyServer.class)
-    .stdio()       // For CLI tools, local agents
-    .sse()         // For web clients, long-lived connections
-    .streamable()  // For bidirectional streaming (recommended)
+    .stdio()       // CLI tools, local agents
+    .sse()         // web clients, long-lived connections
+    .streamable()  // bidirectional streaming (recommended)
     .run();
 ```
-
-### Configure port, timeout, capabilities
 
 ```java
 FastMCP.server(MyServer.class)
     .port(3000)                              // HTTP port
-    .requestTimeout(Duration.ofMinutes(5))   // Request timeout
-    .keepAliveSeconds(30)                     // Keep-alive interval
+    .requestTimeout(Duration.ofMinutes(5))   // request timeout
+    .keepAliveSeconds(30)                    // keep-alive interval
     .capabilities(c -> c
         .tools(true)
         .resources(true, true)
@@ -209,30 +206,7 @@ FastMCP.server(MyServer.class)
     .run();
 ```
 
----
-
-## Icons
-
-Add visual polish to your server, tools, resources, and prompts.
-
-```java
-@McpServer(
-    name = "my-server",
-    icons = {
-        "data:image/svg+xml;base64,...:image/svg+xml:64x64:light",
-        "data:image/svg+xml;base64,...:image/svg+xml:64x64:dark"
-    }
-)
-@McpTool(
-    description = "My tool",
-    icons = {"https://example.com/icon.png"}
-)
-public class MyServer { }
-```
-
----
-
-## Resources & Prompts
+### 5 · Resources & prompts
 
 ```java
 @McpResource(uri = "config://settings")
@@ -246,23 +220,71 @@ public String codeReviewPrompt(@McpParam(description = "Code to review") String 
 }
 ```
 
+### 6 · Hooks — before/after every tool call
+
+```java
+// Run before ALL tools (*)
+@McpPreHook(toolName = "*", order = 1)
+void authenticate(Map<String, Object> args) {
+    String token = (String) args.get("token");
+    if (!isValid(token)) throw new SecurityException("Unauthorized");
+}
+
+// Run after a specific tool only
+@McpPostHook(toolName = "calculate", order = 1)
+void logResult(Map<String, Object> args, Object result) {
+    System.out.println("Result: " + result);
+}
+```
+
+- `toolName` — target tool, or `"*"` for all (empty = inferred from method name)
+- `order` — execution priority, lower runs first (default `0`)
+- Pre-hooks receive the arguments; post-hooks receive arguments + result
+
+### 7 · Request context
+
+```java
+@McpTool(description = "Read file with auth")
+public String readFile(@McpContext Context context, String path) {
+    context.info("Reading file: " + path);
+    String auth = context.getRequestHeaders().get("Authorization");
+    // ...
+}
+```
+
+`Context` gives you `getClientId()`, `getSessionId()`, `getToolName()`,
+`getRequestHeaders()`, `info`/`warning`/`error` logging, `reportProgress`,
+`listResources()`, `listPrompts()`.
+
+### 8 · Organize at scale
+
+```java
+// explicit modules
+@McpServer(name = "MyServer", version = "1.0",
+    modules = {StringTools.class, MathTools.class})
+
+// or package scanning
+@McpServer(name = "MyServer", version = "1.0",
+    scanBasePackage = "com.example.tools")
+```
+
+### 9 · Icons & telemetry
+
+```java
+@McpServer(
+    name = "my-server",
+    icons = {"data:image/svg+xml;base64,...:image/svg+xml:64x64:light"}
+)
+@McpTelemetry(enabled = true, exportConsole = true, sampleRate = 1.0)
+public class MyServer { }
+```
+
+Telemetry collects tool invocation counters, duration histograms, and error
+rates — console or OpenTelemetry export.
+
 ---
 
-## Built-in Tools
-
-Add ONE annotation, get complete functionality.
-
-| Annotation | Tools You Get |
-|------------|---------------|
-| `@McpMemory` | list, read, create, replace, insert, delete, rename |
-| `@McpTodo` | add, list, updateStatus, updateTask, delete, clearCompleted |
-| `@McpPlanner` | createPlan, listPlans, getPlan, addTask, addSubtask |
-| `@McpFileRead` | readLines, readFile, grep, getStats |
-| `@McpFileWrite` | writeFile, appendFile, writeLines, deleteFile, createDirectory |
-
----
-
-## Annotations Reference
+## Annotations reference
 
 | Annotation | Target | Purpose |
 |------------|--------|---------|
@@ -270,20 +292,17 @@ Add ONE annotation, get complete functionality.
 | `@McpTool` | METHOD | Expose as callable tool |
 | `@McpResource` | METHOD | Expose as resource |
 | `@McpPrompt` | METHOD | Expose as prompt template |
-| `@McpParam` | PARAMETER | Add description, examples, constraints, defaults |
+| `@McpParam` | PARAMETER | Description, examples, constraints, defaults |
 | `@McpAsync` | METHOD | Make tool async (return `Mono<?>`) |
 | `@McpContext` | PARAMETER | Inject request context |
-| `@McpPreHook` | METHOD | Run before tool call (params: `toolName`, `order`) |
-| `@McpPostHook` | METHOD | Run after tool call (params: `toolName`, `order`) |
-| `@McpBash` | TYPE | Enable bash tool — sandboxed (default) or host shell via `mode` |
-| `@McpTelemetry` | TYPE | Enable metrics and tracing (params: `enabled`, `exportConsole`, `exportOtlp`, `sampleRate`) |
-| `@McpMemory` | TYPE | Enable memory tools |
-| `@McpTodo` | TYPE | Enable todo/task management tools |
-| `@McpPlanner` | TYPE | Enable planning tools |
-| `@McpFileRead` | TYPE | Enable file reading tools |
-| `@McpFileWrite` | TYPE | Enable file writing tools |
+| `@McpPreHook` / `@McpPostHook` | METHOD | Run code before/after tool calls |
+| `@McpBash` | TYPE | Bash tool — sandboxed (default) or host shell via `mode` |
+| `@McpTelemetry` | TYPE | Metrics and tracing |
+| `@McpMemory` / `@McpTodo` / `@McpPlanner` | TYPE | Built-in tool sets |
+| `@McpFileRead` / `@McpFileWrite` | TYPE | Built-in file tools |
 
 **@McpParam advanced options:**
+
 ```java
 @McpTool(description = "Create task")
 public String createTask(
@@ -299,239 +318,46 @@ public String createTask(
 
 ---
 
-## Hooks — Run Code Before/After Tools
+## What the sandbox actually does (measured, not claimed)
 
-Two hook types supported:
+FastMCP4J ships **235 tests** (`mvn test`) — the sandbox suite runs against
+the real native library on Windows and Linux CI, including deliberate escape
+probes:
 
-**@McpPreHook** — Runs before tool is called. Receives `Map<String, Object> arguments`.
-
-**@McpPostHook** — Runs after tool completes. Receives `Map<String, Object> arguments, Object result`.
-
-Use for logging, validation, authentication, audit trails, metrics.
-
-```java
-@McpServer(name = "MyServer", version = "1.0")
-public class MyServer {
-
-    @McpTool(description = "Calculate")
-    public int calculate(int x, int y) {
-        return x + y;
-    }
-
-    // Run before ALL tools (*)
-    @McpPreHook(toolName = "*", order = 1)
-    void authenticate(Map<String, Object> args) {
-        String token = (String) args.get("token");
-        if (!isValid(token)) throw new SecurityException("Unauthorized");
-    }
-
-    // Run after specific tool only
-    @McpPostHook(toolName = "calculate", order = 1)
-    void logResult(Map<String, Object> args, Object result) {
-        System.out.println("Result: " + result);
-    }
-
-    public static void main(String[] args) {
-        FastMCP.server(MyServer.class).stdio().run();
-    }
-}
-```
-
-**Hook options:**
-- `toolName` — Target specific tool name, or `"*"` for all tools. Empty = inferred from method name
-- `order` — Execution priority (lower = first). Default: `0`
-
-**Hook parameters:**
-- Pre-hook: `Map<String, Object> arguments` — Tool input arguments
-- Post-hook: `Map<String, Object> arguments, Object result` — Input + output
+| Probe | Result |
+|---|---|
+| `ls /` inside the sandbox | virtual root only — `pom.xml`, `target`, host paths absent |
+| `whoami` / `hostname` | `agent@sandbox` — virtual identity, not your OS user |
+| Write to a read-only mount | fails; host file provably never appears |
+| Read-write mount | round-trips to the host through the Java API |
+| `cd` + file across tool calls | persists inside a server; sealed between servers |
+| Script exceeding timeout | caller gets `TIMEOUT`; sandbox replaced fresh for next call |
+| 4 concurrent tool calls | all complete — calls serialize on the sandbox |
+| Sandbox without `bashkit4j` on classpath | clear startup error naming the dependency |
 
 ---
 
-## Context Access — Request Metadata
+## Who it's for
 
-**@McpContext** — Inject request context into your tool.
-
-Access client info, session data, request metadata.
-
-```java
-@McpServer(name = "MyServer", version = "1.0")
-public class MyServer {
-
-    @McpTool(description = "Get client info")
-    public String getClientInfo(@McpContext Context context) {
-        return "Client: " + context.getClientId();
-    }
-
-    @McpTool(description = "Get session ID")
-    public String getSessionId(@McpContext Context context) {
-        return "Session: " + context.getSessionId();
-    }
-
-    @McpTool(description = "Read file with context")
-    public String readFile(@McpContext Context context, String path) {
-        context.info("Reading file: " + path);
-
-        // Access request headers (e.g., for auth)
-        Map<String, String> headers = context.getRequestHeaders();
-        String authHeader = headers.get("Authorization");
-
-        // ... read file
-        return "Content";
-    }
-
-    public static void main(String[] args) {
-        FastMCP.server(MyServer.class).stdio().run();
-    }
-}
-```
-
-**Context capabilities:**
-- `getClientId()` — Client identifier
-- `getSessionId()` — Session identifier
-- `getToolName()` — Current tool name
-- `getRequestHeaders()` — Client request headers (e.g., auth tokens, custom headers)
-- `info(String)` — Log info message
-- `warning(String)` — Log warning
-- `error(String)` — Log error
-- `reportProgress(int, String)` — Report progress percentage
-- `listResources()` — List available resources
-- `listPrompts()` — List available prompts
+- **AI/LLM engineers** — expose Java services to Claude, Cursor, or any MCP
+  client with annotation-level effort.
+- **Teams shipping agent tools** — memory, todo, planning, file access, and a
+  sandboxed terminal out of the box; hooks and telemetry for production.
+- **Security-conscious platforms** — agent terminal access with the host
+  unreachable by construction, not by prompt-engineering.
+- **Existing Spring/DI codebases** — drop-in server, no framework lock-in;
+  your beans become tools with an annotation.
 
 ---
 
-## New Features
+## Requirements & performance
 
-### @McpBash — Sandboxed Bash (default) + Host Shell
+Just **Java 17+** and Maven 3.8+. MCP spec 2.0.1 via the official Java SDK
+(`mcp-core` + `mcp-json-jackson2`).
 
-**Give your AI agent a terminal — without giving it your machine.** Two modes,
-chosen per server class with `mode`:
-
-**🟢 Sandbox mode (default)** — scripts run in a [bashkit4j](https://github.com/tersePrompts/bashkit4j)
-in-memory sandbox: a POSIX-style bash with 160+ commands re-implemented
-natively, an in-memory virtual filesystem, and network denied by default.
-**No real bash is ever spawned.** The script gets a computer that doesn't
-exist; your machine stays yours.
-
-Give it a real job — analyzing a project with **read-only eyes**, keeping its
-own scratch space:
-
-```java
-@McpServer(name = "Reviewer", version = "1.0")
-@McpBash(
-    allowMountsUnder = "C:/dev",           // opt in: all it may ever see
-    mounts = {"/project=C:/dev/my-app"},   // mount the project — read-only
-    timeout = 30, maxCommands = 10_000     // bounds runaway scripts
-)
-public class Reviewer { }
-```
-
-Then the agent calls the `bash` tool:
-
-```
-grep -rn TODO /project/src | head -5      # real files, zero risk
-echo "findings..." > /notes.md            # writes stay in the sandbox
-```
-
-Writes land in the sandbox's private filesystem — the agent summarizes, your
-disk was never writable, no process was ever spawned.
-
-| | Host shell (`ProcessBuilder`, Docker) | **Sandbox mode** |
-|---|---|---|
-| Real bash on the host | ✅ runs — full attack surface | **❌ never — bash re-implemented natively** |
-| Host filesystem visible | ✅ all of it | **❌ invisible until you mount, read-only by default** |
-| OS processes per command | ✅ one per call | **❌ zero — everything runs in-process** |
-| Network access | ✅ open | **❌ denied by default** |
-| One rogue script | node down | **sandbox reset** |
-
-**Isolation guarantees:**
-- No host filesystem, process, or network access unless explicitly mounted
-- Mounts require `allowMountsUnder` prefixes, canonicalized and enforced
-  inside the native library — `..` and symlink tricks can't escape
-- State persists across calls (cwd, env, files) — multi-step agent workflows
-  work; isolation across servers still holds
-
-> Sandbox mode requires the optional `io.github.terseprompts:bashkit4j:0.2.0` dependency
-> (native libs for Windows/Linux/macOS, x86-64 + ARM64, are bundled and auto-detected).
-
-**🟠 Host mode** — the real shell (cmd.exe / bash / zsh) with legacy guardrails.
-For trusted environments only.
-
-```java
-@McpBash(
-    mode = BashMode.HOST,
-    timeout = 30,
-    visibleAfterBasePath = "/sandbox/*",   // whitelist allowed directories
-    notAllowedPaths = {"/etc", "/root"}    // blacklist dangerous paths
-)
-```
-
-### @McpTelemetry — Metrics & Tracing
-
-Collect metrics and traces for tool invocations.
-
-```java
-@McpServer(name = "MyServer", version = "1.0")
-@McpTelemetry(
-    enabled = true,
-    exportConsole = true,              // Human-readable output
-    exportOtlp = false,                // OpenTelemetry export
-    sampleRate = 1.0,                  // 100% sampling
-    includeArguments = false,          // Don't log sensitive args
-    metricExportIntervalMs = 60_000
-)
-public class MyServer { }
-```
-
-**Collected metrics:**
-- Tool invocation counters
-- Execution duration histograms
-- Error rates
-
-### Multi-Class Tool Organization
-
-Split tools across multiple classes for better organization.
-
-**Manual modules** (fast, explicit):
-```java
-@McpServer(
-    name = "MyServer",
-    version = "1.0",
-    modules = {StringTools.class, MathTools.class}
-)
-```
-
-**Package scanning** (convenient):
-```java
-@McpServer(
-    name = "MyServer",
-    version = "1.0",
-    scanBasePackage = "com.example.tools"
-)
-```
-
----
-
-## Why FastMCP4J?
-
-### Less code
-
-**Raw MCP SDK**: 35+ lines per tool
-**FastMCP4J**: ~8 lines per tool
-
-### Lightweight
-
-| Framework | Dependencies | Best For |
-|-----------|--------------|----------|
-| Spring AI | 50+ jars | Full-stack AI apps |
-| LangChain4j | 30+ jars | Enterprise AI pipelines |
-| Quarkus AI | 40+ jars | Cloud-native microservices |
-| FastMCP4J | **12 jars** | **MCP servers only** |
-
-### Fast & focused
-
-- Cold start: <500ms
-- Tool invocation: <5ms
-- Memory: ~64MB
+- Cold start: <500 ms
+- Tool invocation: <5 ms
+- Memory: ~64 MB
 - Purpose-built for MCP — not a general AI framework
 
 ---
@@ -540,8 +366,8 @@ Split tools across multiple classes for better organization.
 
 | Branch | What runs |
 |--------|-----------|
-| `development` (staging) | Tests + MCP integration suites (STDIO / SSE / Streamable) on every push and PR |
-| `main` | Same full test suite + **publish to Maven Central** (staged; requires manual approval in [Sonatype Central](https://central.sonatype.com/deployments)) |
+| `development` (staging) | Full test suite + MCP integration tests (STDIO / SSE / Streamable / **Sandboxed Bash**) on every push and PR |
+| `main` | Same suite + **publish to Maven Central** (staged; manual approval in [Sonatype Central](https://central.sonatype.com/deployments)) |
 
 Flow: feature branch → `development` → `main` (release).
 
@@ -549,17 +375,17 @@ Flow: feature branch → `development` → `main` (release).
 
 ## Documentation
 
-- [Architecture](ARCHITECTURE.md) — How it works
-- [Roadmap](ROADMAP.md) — What's next
+- [Architecture](ARCHITECTURE.md) — how it works
+- [Roadmap](ROADMAP.md) — what's next
 - [Contributing](CONTRIBUTING.md) — PRs welcome
-- [Changelog](CHANGELOG.md) — Version history
-- [Claude Skill](.claude/skill/fastmcp4j/skill.md) — For AI agents
+- [Changelog](CHANGELOG.md) — version history
+- [Claude Skill](.claude/skill/fastmcp4j/skill.md) — for AI agents
 
 ---
 
 ## License
 
-MIT © 2026
+[MIT](LICENSE) © 2026
 
 ---
 
@@ -570,4 +396,5 @@ MIT © 2026
 [Get started](#quick-start-2-minutes) • [Examples](https://github.com/tersePrompts/fastMCP4J/blob/main/src/test/java/io/github/terseprompts/fastmcp/example/EchoServer.java) • [Docs](#documentation)
 
 Made with ❤️ for the Java community
+
 </div>
