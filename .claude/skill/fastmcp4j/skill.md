@@ -139,6 +139,37 @@ public class MyServer { }
 public class MyServer { }
 ```
 
+### Sandboxed Bash (`@McpBash`)
+
+Default mode is `BashMode.SANDBOX`: scripts run in a bashkit4j in-memory
+virtual computer — own filesystem, processes, and env; the host is
+unreachable. State persists across calls. Requires the optional dependency:
+
+```xml
+<dependency>
+    <groupId>io.github.terseprompts</groupId>
+    <artifactId>bashkit4j</artifactId>
+    <version>0.2.0</version>
+</dependency>
+```
+
+```java
+@McpServer(name = "Reviewer", version = "1.0")
+@McpBash(
+    allowMountsUnder = "C:/dev",          // host prefixes mounts may resolve under (required for mounts)
+    mounts = {"/project=C:/dev/my-app"},  // "/vfs=host/dir" read-only; append ":rw" for writable
+    timeout = 30,                         // per-call timeout in seconds
+    maxCommands = 10_000,                 // bounds runaway scripts
+    username = "agent", hostname = "sandbox",
+    cwd = "/", env = {"CI=true"}
+)
+public class Reviewer { }
+```
+
+The exposed `bash` tool takes `command` (a full multi-line bash script) and
+optional `timeout`. Real host shell instead: `mode = BashMode.HOST` (trusted
+environments only; then `visibleAfterBasePath` / `notAllowedPaths` apply).
+
 ## Transports
 
 ```java
