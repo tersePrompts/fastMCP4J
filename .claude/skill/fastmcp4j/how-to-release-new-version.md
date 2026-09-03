@@ -17,7 +17,7 @@ license: MIT
 status: Beta (v0.5.0-beta) — Sandboxed bash (bashkit4j), MCP Java SDK 2.0.1, API stable
 mcp_spec: 2.0.1
 transports: [stdio, sse, http_streamable]
-builtin_tools: [memory, todo, planner, fileread, filewrite]
+builtin_tools: [memory, todo, planner, fileread, filewrite, bash-sandbox]
 annotations:
   - "@McpServer(name, version, icons)"
   - "@McpTool(description, icons)"
@@ -33,6 +33,7 @@ annotations:
   - "@McpPlanner"
   - "@McpFileRead"
   - "@McpFileWrite"
+  - "@McpBash(mode, timeout, maxCommands, username, hostname, cwd, env, mounts, allowMountsUnder)"
 dependency:
   maven: "io.github.terseprompts.fastmcp:fastmcp-java:0.5.0-beta"
   gradle: "implementation 'io.github.terseprompts.fastmcp:fastmcp-java:0.5.0-beta'"
