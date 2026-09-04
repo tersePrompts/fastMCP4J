@@ -188,6 +188,21 @@ path guardrails.
 > `io.github.terseprompts:bashkit4j:0.2.0` dependency — native libs for
 > Windows/Linux/macOS (x86-64 + ARM64) are bundled and auto-detected.
 
+> **🔭 Future scope — a third mode, `BashMode.DOCKER`.** The isolation ladder
+> gets one more rung: `HOST` = the full computer (trusted use) → `SANDBOX` =
+> a virtual computer, no real code execution (default) → **`DOCKER`** = real
+> bash inside a per-session container jail. The sketch: one container per MCP
+> session, lazy-created and hardened at run (`--network none --memory 512m
+> --cpus 1 --pids-limit 64 --security-opt no-new-privileges --read-only
+> --tmpfs /tmp`); the command passed as a single argv element (no host-shell
+> interpolation → no injection surface); the timeout enforced *inside* the
+> container so the wall-clock survives a server crash; named exit codes
+> (`[exit 124: timed out]`, `[exit 137: OOM]`), capped output, idle-TTL
+> eviction with a reaper backstop — containers stay stateless, durable state
+> lives only in the mounted worktree. Config stays env-only
+> (`FASTMCP_DOCKER_IMAGE`, timeout). Not started — see
+> [Roadmap](ROADMAP.md); help wanted.
+
 ### 4 · Pick a transport
 
 ```java
