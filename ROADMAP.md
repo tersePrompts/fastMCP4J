@@ -363,6 +363,36 @@ Target: Q2 2026
 
 ---
 
+## Future — Docker Sandbox Mode (`BashMode.DOCKER`)
+
+**Status**: Not Started
+**Priority**: Medium
+**Help wanted** — design sketched in the [README](README.md#3--sandboxed-bash--give-the-agent-a-terminal-not-your-machine)
+
+A third bash mode between `SANDBOX` (in-memory, no real code execution) and
+`HOST` (real shell, full OS): **real bash inside a per-session container jail**.
+
+#### Design Sketch
+- One container per MCP session, lazy-created; name collision from a previous
+  process life → remove and recreate, never adopt
+- Hardened at run: `--network none --memory 512m --cpus 1 --pids-limit 64
+  --security-opt no-new-privileges --read-only --tmpfs /tmp` — namespaces +
+  capability drops as the jail
+- Host directories mounted only under explicit allowlist prefixes (same
+  `allowMountsUnder` contract as sandbox mode)
+- Command passed as a single argv element to `bash -c` inside the container —
+  no host-shell interpolation, no injection surface
+- Timeout enforced *inside* the container (`timeout -k 5 N`), so the wall
+  clock survives a server crash; Java-side abort as a second net
+- Results: stdout + stderr concatenated, named exit codes (`[exit 124: timed
+  out]`, `[exit 137: OOM]`), output capped (~100 KB)
+- Lifecycle: idle-TTL eviction on each call + reaper backstop; containers are
+  stateless — durable state lives only in the mounted worktree, so a destroy
+  costs one fast recreate
+- Config env-only: `FASTMCP_DOCKER_IMAGE`, `EXEC_TIMEOUT_S`
+
+---
+
 ## Contributing
 
 To work on any of these features:
