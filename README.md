@@ -2,7 +2,7 @@
 
 # FastMCP4J
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.terseprompts/fastmcp-java)](https://central.sonatype.com/artifact/io.github.terseprompts/fastmcp-java)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.terseprompts.fastmcp/fastmcp-java)](https://central.sonatype.com/artifact/io.github.terseprompts.fastmcp/fastmcp-java)
 [![Java](https://img.shields.io/badge/Java-17+-orange.svg)](https://openjdk.org/)
 [![CI](https://github.com/tersePrompts/fastMCP4J/actions/workflows/test.yml/badge.svg)](https://github.com/tersePrompts/fastMCP4J/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -30,7 +30,7 @@ construction**. Cold start in under 500 ms, twelve dependencies, everything
 testable in-process.
 
 > **Status**: beta (v0.5.0-beta) — API stable, 235 tests passing, published to
-> [Maven Central](https://central.sonatype.com/artifact/io.github.terseprompts/fastmcp-java).
+> [Maven Central](https://central.sonatype.com/artifact/io.github.terseprompts.fastmcp/fastmcp-java).
 
 ---
 

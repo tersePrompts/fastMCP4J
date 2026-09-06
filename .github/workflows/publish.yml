@@ -54,7 +54,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://repo1.maven.org/maven2/io/github/terseprompts/fastmcp-java/${VERSION}/fastmcp-java-${VERSION}.jar")
+            "https://repo1.maven.org/maven2/io/github/terseprompts/fastmcp/fastmcp-java/${VERSION}/fastmcp-java-${VERSION}.jar")
           echo "artifact_status=${CODE}"
           ISSUE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/issues?state=all&per_page=100" \
             | grep -c "Maven Central Release Approval - ${VERSION}\"" || true)
