@@ -146,6 +146,35 @@ public interface Context {
      */
     Map<String, String> getHeaders();
 
+    /**
+     * Request LLM sampling from the client (MCP "sampling" capability).
+     * <p>
+     * The server asks the connected client to have a model generate a response
+     * to the given prompt. This blocks until the client responds.
+     *
+     * @param prompt The prompt to send to the model
+     * @return The model's text response
+     * @throws UnsupportedOperationException if sampling is not wired up
+     */
+    default String sample(String prompt) {
+        throw new UnsupportedOperationException("Sampling not available");
+    }
+
+    /**
+     * Request LLM sampling from the client with a maximum token budget.
+     * <p>
+     * The server asks the connected client to have a model generate a response
+     * to the given prompt. This blocks until the client responds.
+     *
+     * @param prompt    The prompt to send to the model
+     * @param maxTokens Maximum number of tokens the model may generate
+     * @return The model's text response
+     * @throws UnsupportedOperationException if sampling is not wired up
+     */
+    default String sample(String prompt, int maxTokens) {
+        throw new UnsupportedOperationException("Sampling not available");
+    }
+
     // ========== Agent Lifecycle: Multi-Tenancy Support ==========
 
     /**

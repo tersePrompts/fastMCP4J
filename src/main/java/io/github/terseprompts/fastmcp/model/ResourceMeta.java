@@ -1,5 +1,6 @@
 package io.github.terseprompts.fastmcp.model;
 
+import io.github.terseprompts.fastmcp.adapter.ResourceTemplateMatcher;
 import io.github.terseprompts.fastmcp.icons.Icon;
 import lombok.Data;
 
@@ -15,6 +16,8 @@ public class ResourceMeta {
     Method method;
     boolean async;
     List<Icon> icons;
+    boolean template;
+    List<String> templateParams;
 
     public ResourceMeta() {}
 
@@ -25,6 +28,8 @@ public class ResourceMeta {
         this.mimeType = mimeType;
         this.method = method;
         this.async = async;
+        this.template = ResourceTemplateMatcher.isTemplate(uri);
+        this.templateParams = ResourceTemplateMatcher.templateParams(uri);
     }
 
     public ResourceMeta(String uri, String name, String description, String mimeType, Method method, boolean async, List<Icon> icons) {
@@ -35,5 +40,20 @@ public class ResourceMeta {
         this.method = method;
         this.async = async;
         this.icons = icons;
+        this.template = ResourceTemplateMatcher.isTemplate(uri);
+        this.templateParams = ResourceTemplateMatcher.templateParams(uri);
+    }
+
+    public ResourceMeta(String uri, String name, String description, String mimeType, Method method, boolean async,
+                        List<Icon> icons, boolean template, List<String> templateParams) {
+        this.uri = uri;
+        this.name = name;
+        this.description = description;
+        this.mimeType = mimeType;
+        this.method = method;
+        this.async = async;
+        this.icons = icons;
+        this.template = template;
+        this.templateParams = templateParams;
     }
 }

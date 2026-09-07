@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 /**
  * Concrete implementation of Context interface.
@@ -17,13 +19,39 @@ public class ContextImpl implements Context {
     private final String serverName;
     private final Map<String, Object> sessionState;
     private final NotificationHelper notificationHelper;
+    private final Function<String, String> sampler;
+    private final BiFunction<String, Integer, String> samplerWithMaxTokens;
 
     public ContextImpl(RequestContext exchange, String serverName,
                      Map<String, Object> sessionState, NotificationHelper notificationHelper) {
+        this(exchange, serverName, sessionState, notificationHelper, null, null);
+    }
+
+    public ContextImpl(RequestContext exchange, String serverName,
+                     Map<String, Object> sessionState, NotificationHelper notificationHelper,
+                     Function<String, String> sampler, BiFunction<String, Integer, String> samplerWithMaxTokens) {
         this.exchange = exchange;
         this.serverName = serverName;
         this.sessionState = sessionState;
         this.notificationHelper = notificationHelper;
+        this.sampler = sampler;
+        this.samplerWithMaxTokens = samplerWithMaxTokens;
+    }
+
+    @Override
+    public String sample(String prompt) {
+        if (sampler == null) {
+            throw new UnsupportedOperationException("Sampling not available");
+        }
+        return sampler.apply(prompt);
+    }
+
+    @Override
+    public String sample(String prompt, int maxTokens) {
+        if (samplerWithMaxTokens != null) {
+            return samplerWithMaxTokens.apply(prompt, maxTokens);
+        }
+        return sample(prompt);
     }
 
     @Override

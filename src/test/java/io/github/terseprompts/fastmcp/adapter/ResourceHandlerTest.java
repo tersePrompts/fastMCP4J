@@ -41,6 +41,11 @@ class ResourceHandlerTest {
         public byte[] getBinaryResource() {
             return new byte[]{0x01, 0x02, 0x03};
         }
+
+        @McpResource(uri = "user://profile/{name}", name = "profile", description = "User profile")
+        public String getUserProfile(String name) {
+            return "Profile for: " + name;
+        }
     }
 
     @Test
@@ -179,5 +184,59 @@ class ResourceHandlerTest {
         // Verify the binary content
         byte[] decoded = java.util.Base64.getDecoder().decode(content.blob());
         assertArrayEquals(new byte[]{0x01, 0x02, 0x03}, decoded);
+    }
+
+    @Test
+    void testResourceTemplateIsDetected() throws Exception {
+        TestResourceServer server = new TestResourceServer();
+        AnnotationScanner scanner = new AnnotationScanner();
+        ServerMeta meta = scanner.scan(TestResourceServer.class);
+
+        ResourceMeta resourceMeta = meta.getResources().stream()
+                .filter(r -> r.getName().equals("profile"))
+                .findFirst()
+                .orElseThrow();
+
+        assertTrue(resourceMeta.isTemplate());
+        assertEquals(List.of("name"), resourceMeta.getTemplateParams());
+        assertEquals("user://profile/{name}", resourceMeta.getUri());
+
+        // Non-template resources are not flagged
+        ResourceMeta text = meta.getResources().stream()
+                .filter(r -> r.getName().equals("test"))
+                .findFirst()
+                .orElseThrow();
+        assertFalse(text.isTemplate());
+        assertTrue(text.getTemplateParams().isEmpty());
+    }
+
+    @Test
+    void testResourceTemplateParamBinding() throws Exception {
+        TestResourceServer server = new TestResourceServer();
+        AnnotationScanner scanner = new AnnotationScanner();
+        ServerMeta meta = scanner.scan(TestResourceServer.class);
+
+        ResourceMeta resourceMeta = meta.getResources().stream()
+                .filter(r -> r.getName().equals("profile"))
+                .findFirst()
+                .orElseThrow();
+
+        ResourceHandler handler = new ResourceHandler(
+                server,
+                resourceMeta,
+                new ArgumentBinder(),
+                new ResourceResponseMarshaller()
+        );
+
+        // Concrete URI user://profile/ford must bind name=ford
+        McpSchema.ReadResourceRequest request = new McpSchema.ReadResourceRequest("user://profile/ford");
+        McpSchema.ReadResourceResult result = handler.asHandler().apply(null, request).block();
+
+        assertNotNull(result);
+        assertEquals(1, result.contents().size());
+        McpSchema.BlobResourceContents content =
+                (McpSchema.BlobResourceContents) result.contents().get(0);
+        String decoded = new String(java.util.Base64.getDecoder().decode(content.blob()));
+        assertEquals("Profile for: ford", decoded);
     }
 }
