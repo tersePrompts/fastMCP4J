@@ -40,8 +40,15 @@ public class ResourceHandler {
     public BiFunction<McpAsyncServerExchange, McpSchema.ReadResourceRequest, Mono<McpSchema.ReadResourceResult>> asHandler() {
         return (exchange, request) -> {
             try {
-                // ReadResourceRequest doesn't have arguments, use empty map
-                Object[] args = binder.bind(meta.getMethod(), Map.of());
+                Map<String, Object> arguments;
+                if (meta.isTemplate()) {
+                    arguments = new java.util.HashMap<>(
+                        ResourceTemplateMatcher.match(meta.getUri(), request.uri())
+                    );
+                } else {
+                    arguments = Map.of();
+                }
+                Object[] args = binder.bind(meta.getMethod(), arguments);
                 Object result = meta.getMethod().invoke(instance, args);
 
                 if (meta.isAsync()) {

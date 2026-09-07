@@ -3,6 +3,8 @@ package io.github.terseprompts.fastmcp.adapter;
 import io.github.terseprompts.fastmcp.context.ContextImpl;
 import io.github.terseprompts.fastmcp.context.McpContext;
 import io.github.terseprompts.fastmcp.hook.HookManager;
+import io.github.terseprompts.fastmcp.middleware.Middleware;
+import io.github.terseprompts.fastmcp.middleware.MiddlewareChain;
 import io.github.terseprompts.fastmcp.model.ToolMeta;
 import io.github.terseprompts.fastmcp.telemetry.TelemetryService;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
@@ -40,6 +42,7 @@ public class ToolHandler {
     private final String serverName;
     private final HookManager hookManager;
     private final TelemetryService telemetry;
+    private final MiddlewareChain middlewareChain;
 
     // Session state storage - in production this could be backed by Redis, etc.
     private final Map<String, Map<String, Object>> sessionStates = new ConcurrentHashMap<>();
@@ -47,6 +50,17 @@ public class ToolHandler {
     public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder,
                      ResponseMarshaller marshaller, String serverName, HookManager hookManager,
                      TelemetryService telemetry) {
+        this(instance, meta, binder, marshaller, serverName, hookManager, telemetry, null);
+    }
+
+    public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder,
+                     ResponseMarshaller marshaller, String serverName, HookManager hookManager) {
+        this(instance, meta, binder, marshaller, serverName, hookManager, null);
+    }
+
+    public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder,
+                     ResponseMarshaller marshaller, String serverName, HookManager hookManager,
+                     TelemetryService telemetry, MiddlewareChain middlewareChain) {
         this.instance = instance;
         this.meta = meta;
         this.binder = binder;
@@ -54,11 +68,7 @@ public class ToolHandler {
         this.serverName = serverName;
         this.hookManager = hookManager;
         this.telemetry = telemetry;
-    }
-
-    public ToolHandler(Object instance, ToolMeta meta, ArgumentBinder binder,
-                     ResponseMarshaller marshaller, String serverName, HookManager hookManager) {
-        this(instance, meta, binder, marshaller, serverName, hookManager, null);
+        this.middlewareChain = middlewareChain;
     }
 
     public BiFunction<McpAsyncServerExchange, McpSchema.CallToolRequest, Mono<McpSchema.CallToolResult>> asHandler() {
@@ -68,12 +78,15 @@ public class ToolHandler {
                 ? telemetry.createSpan("tool." + meta.getName(), null)
                 : null;
 
-            setupContext(exchange);
+            setupContext(exchange, request);
             try {
-                if (hookManager != null) hookManager.executePreHooks(meta.getName(), request.arguments());
-
-                Object[] args = binder.bind(meta.getMethod(), request.arguments());
-                Object result = meta.getMethod().invoke(instance, args);
+                Object result;
+                if (middlewareChain != null && !middlewareChain.isEmpty()) {
+                    Middleware.Invocation core = (name, cargs) -> invokeCore(cargs);
+                    result = middlewareChain.intercept(meta.getName(), request.arguments(), core);
+                } else {
+                    result = invokeCore(request.arguments());
+                }
 
                 Mono<McpSchema.CallToolResult> mono;
                 if (meta.isAsync()) {
@@ -106,6 +119,15 @@ public class ToolHandler {
         };
     }
 
+    /**
+     * Executes pre-hooks, binds arguments and invokes the tool method.
+     */
+    private Object invokeCore(Map<String, Object> arguments) throws Exception {
+        if (hookManager != null) hookManager.executePreHooks(meta.getName(), arguments);
+        Object[] args = binder.bind(meta.getMethod(), arguments);
+        return meta.getMethod().invoke(instance, args);
+    }
+
     private void recordTelemetry(Instant start, boolean success) {
         if (telemetry != null) {
             Duration duration = Duration.between(start, Instant.now());
@@ -116,7 +138,7 @@ public class ToolHandler {
     /**
      * Set up Context for the current request.
      */
-    private void setupContext(McpAsyncServerExchange exchange) {
+    private void setupContext(McpAsyncServerExchange exchange, McpSchema.CallToolRequest request) {
         String sessionId = getSessionId(exchange);
         Map<String, Object> sessionState = sessionStates.computeIfAbsent(
             sessionId, k -> new ConcurrentHashMap<>()
@@ -130,20 +152,33 @@ public class ToolHandler {
             getMetadata(exchange)         // meta
         );
         
-        ContextImpl.NotificationHelper notificationHelper = createNotificationHelper(exchange);
+        Object progressToken = extractProgressToken(request);
+        ContextImpl.NotificationHelper notificationHelper = createNotificationHelper(exchange, progressToken);
         
         ContextImpl context = new ContextImpl(
             mcpExchange,
             serverName,
             sessionState,
-            notificationHelper
+            notificationHelper,
+            prompt -> doSample(exchange, prompt, 0),
+            (prompt, maxTokens) -> doSample(exchange, prompt, maxTokens)
         );
         
         ContextImpl.setCurrentContext(context);
     }
-    
+
     /**
-     * Clean up Context after request completes.
+     * Extract the progress token from a tool request's meta, if present.
+     */
+    private Object extractProgressToken(McpSchema.CallToolRequest request) {
+        if (request == null || request.meta() == null) {
+            return null;
+        }
+        return request.meta().get("progressToken");
+    }
+
+    /**
+     * Immediately clear context (used when a handler completes before wiring).
      */
     private void cleanupContext() {
         ContextImpl.clearCurrentContext();
@@ -210,19 +245,39 @@ public class ToolHandler {
     }
     
     /**
-     * Create notification helper from exchange.
-     * This is a placeholder - actual implementation would use MCP SDK's notification API.
+     * Create a real notification helper backed by the MCP exchange.
+     * Progress and log notifications are sent to the connected client via
+     * the MCP SDK. Progress requires a token from the request meta; without
+     * one the notification cannot be delivered and falls back to stderr.
      */
-    private ContextImpl.NotificationHelper createNotificationHelper(McpAsyncServerExchange exchange) {
+    private ContextImpl.NotificationHelper createNotificationHelper(McpAsyncServerExchange exchange, Object progressToken) {
         return new ContextImpl.NotificationHelper() {
             @Override
             public void sendLog(String level, String message) {
-                System.err.println("[" + level + "] " + message);
+                try {
+                    if (exchange == null) throw new IllegalStateException("No exchange available");
+                    exchange.loggingNotification(ProtocolNotifications.buildLogNotification(level, message))
+                            .subscribe(null, err -> fallbackLog(level, message));
+                } catch (Exception e) {
+                    fallbackLog(level, message);
+                }
             }
             
             @Override
             public void sendProgress(double progress, double total, String message) {
-                System.err.println("[Progress] " + progress + "/" + total + ": " + message);
+                if (progressToken == null) {
+                    System.err.println("[Progress] " + progress + "/" + total + ": " + message);
+                    return;
+                }
+                try {
+                    if (exchange == null) throw new IllegalStateException("No exchange available");
+                    exchange.progressNotification(ProtocolNotifications.buildProgressNotification(
+                            progressToken, progress, total, message))
+                            .subscribe(null,
+                                err -> System.err.println("[Progress] " + progress + "/" + total + ": " + message));
+                } catch (Exception e) {
+                    System.err.println("[Progress] " + progress + "/" + total + ": " + message);
+                }
             }
             
             @Override
@@ -230,6 +285,36 @@ public class ToolHandler {
                 System.err.println("[Resource] " + action + ": " + uri);
             }
         };
+    }
+
+    private void fallbackLog(String level, String message) {
+        System.err.println("[" + level + "] " + message);
+    }
+
+    /**
+     * Perform an LLM sampling request against the client. Blocks on the exchange's
+     * {@code createMessage} Mono since the tool API is synchronous.
+     */
+    private String doSample(McpAsyncServerExchange exchange, String prompt, int maxTokens) {
+        try {
+            if (exchange == null) throw new IllegalStateException("No exchange available");
+            McpSchema.CreateMessageRequest request = McpSchema.CreateMessageRequest.builder(
+                    List.of(McpSchema.SamplingMessage.builder(McpSchema.Role.USER,
+                            new McpSchema.TextContent(prompt)).build()),
+                    maxTokens)
+                    .build();
+            McpSchema.CreateMessageResult result = exchange.createMessage(request).block();
+            if (result == null) {
+                return null;
+            }
+            McpSchema.Content content = result.content();
+            if (content instanceof McpSchema.TextContent text) {
+                return text.text();
+            }
+            return content != null ? content.toString() : null;
+        } catch (Exception e) {
+            throw new RuntimeException("LLM sampling failed", e);
+        }
     }
 
     private McpSchema.CallToolResult errorResult(Throwable e) {

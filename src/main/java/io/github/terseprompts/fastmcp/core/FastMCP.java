@@ -26,6 +26,8 @@ import io.github.terseprompts.fastmcp.mcptools.planner.PlannerTool;
 import io.github.terseprompts.fastmcp.mcptools.todo.InMemoryTodoStore;
 import io.github.terseprompts.fastmcp.mcptools.todo.TodoStore;
 import io.github.terseprompts.fastmcp.mcptools.todo.TodoTool;
+import io.github.terseprompts.fastmcp.middleware.Middleware;
+import io.github.terseprompts.fastmcp.middleware.MiddlewareChain;
 import io.github.terseprompts.fastmcp.model.*;
 import io.github.terseprompts.fastmcp.annotations.scanner.AnnotationScanner;
 import io.github.terseprompts.fastmcp.adapter.schema.SchemaGenerator;
@@ -118,6 +120,15 @@ public final class FastMCP {
 
     // Instructions
     private String instructions;
+
+    // Middleware chain (applied to tool invocations)
+    private final MiddlewareChain middlewareChain = new MiddlewareChain();
+
+    // Dependency-injection registry (beans for @McpInject fields)
+    private final InjectionRegistry injectionRegistry = new InjectionRegistry();
+
+    // Instance created during build(), retained for lifecycle shutdown
+    private Object serverInstance;
 
     private FastMCP(Class<?> serverClass) {
         this.serverClass = serverClass;
@@ -295,6 +306,38 @@ public final class FastMCP {
     }
 
     // ========================================
+    // Middleware
+    // ========================================
+
+    /** Append a middleware to the tool invocation pipeline (outermost runs first). */
+    public FastMCP middleware(Middleware m) {
+        this.middlewareChain.add(m);
+        return this;
+    }
+
+    /** Copy all middleware from the given chain into this server's pipeline. */
+    public FastMCP middleware(MiddlewareChain chain) {
+        this.middlewareChain.addAll(chain);
+        return this;
+    }
+
+    // ========================================
+    // Dependency Injection
+    // ========================================
+
+    /** Register a bean by id for injection into fields named after the id. */
+    public FastMCP inject(String id, Object bean) {
+        this.injectionRegistry.register(id, bean);
+        return this;
+    }
+
+    /** Register a bean by type for injection into matching fields. */
+    public FastMCP inject(Class<?> type, Object bean) {
+        this.injectionRegistry.register(type, bean);
+        return this;
+    }
+
+    // ========================================
     // Lifecycle
     // ========================================
 
@@ -303,6 +346,7 @@ public final class FastMCP {
         try {
             McpAsyncServer mcp = build();
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                Injector.invokeShutdown(serverInstance);
                 mcp.closeGracefully().block(Duration.ofSeconds(10));
                 if (telemetry != null) telemetry.close();
                 if (sandboxBashTool != null) sandboxBashTool.close();
@@ -323,6 +367,12 @@ public final class FastMCP {
     public McpAsyncServer build() {
         try {
             Object instance = serverClass.getDeclaredConstructor().newInstance();
+            this.serverInstance = instance;
+
+            // Run dependency injection on @McpInject fields, then startup lifecycle.
+            Injector.injectFields(serverInstance, injectionRegistry);
+            Injector.invokeStartup(serverInstance);
+
             ServerMeta meta = scanner.scan(serverClass);
             serverName = meta.getName();
 
@@ -439,12 +489,25 @@ public final class FastMCP {
         if (!caps.hasResources()) return;
 
         try {
-            var resourcesMethod = builder.getClass().getMethod("resources", List.class);
-            List<McpServerFeatures.AsyncResourceSpecification> specs = new ArrayList<>();
+            List<McpServerFeatures.AsyncResourceSpecification> resources = new ArrayList<>();
+            List<McpServerFeatures.AsyncResourceTemplateSpecification> templates = new ArrayList<>();
             for (var resource : meta.getResources()) {
-                specs.add(buildResource(resource, instance));
+                if (resource.isTemplate()) {
+                    templates.add(buildResourceTemplate(resource, instance));
+                } else {
+                    resources.add(buildResource(resource, instance));
+                }
             }
-            resourcesMethod.invoke(builder, specs);
+
+            if (!resources.isEmpty()) {
+                var resourcesMethod = builder.getClass().getMethod("resources", List.class);
+                resourcesMethod.invoke(builder, resources);
+            }
+
+            if (!templates.isEmpty()) {
+                var templatesMethod = builder.getClass().getMethod("resourceTemplates", List.class);
+                templatesMethod.invoke(builder, templates);
+            }
         } catch (Exception e) {
             throw new RuntimeException("Failed to register resources", e);
         }
@@ -599,7 +662,7 @@ public final class FastMCP {
                 .build();
 
         var handler = new ToolHandler(instance, toolMeta, new ArgumentBinder(),
-            new ResponseMarshaller(), serverName, hookManager, telemetry);
+            new ResponseMarshaller(), serverName, hookManager, telemetry, middlewareChain);
         return new McpServerFeatures.AsyncToolSpecification(tool, handler.asHandler());
     }
 
@@ -613,6 +676,17 @@ public final class FastMCP {
 
         var handler = new ResourceHandler(instance, resourceMeta, new ArgumentBinder(), new ResourceResponseMarshaller());
         return new McpServerFeatures.AsyncResourceSpecification(resource, handler.asHandler());
+    }
+
+    private McpServerFeatures.AsyncResourceTemplateSpecification buildResourceTemplate(
+            ResourceMeta resourceMeta, Object instance) {
+        var template = McpSchema.ResourceTemplate.builder(resourceMeta.getUri(), resourceMeta.getName())
+                .description(resourceMeta.getDescription())
+                .mimeType(resourceMeta.getMimeType())
+                .build();
+
+        var handler = new ResourceHandler(instance, resourceMeta, new ArgumentBinder(), new ResourceResponseMarshaller());
+        return new McpServerFeatures.AsyncResourceTemplateSpecification(template, handler.asHandler());
     }
 
     @SuppressWarnings("unchecked")
